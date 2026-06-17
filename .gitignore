@@ -25,6 +25,11 @@ go.work
 go.work.sum
 checks*
 
+# ent generated files
+ent/*
+!ent/schema/
+!ent/generate.go
+
 # env file
 .env
 

@@ -8,6 +8,9 @@ import (
     "check_scan/config"
     "check_scan/models"
 
+    "github.com/golang-migrate/migrate/v4"
+    _ "github.com/golang-migrate/migrate/v4/database/postgres"
+    _ "github.com/golang-migrate/migrate/v4/source/file"
     "github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -73,7 +76,6 @@ func (d *Database) EnsureDatabaseExists() error {
             }
         }
 
-        // Create new database
         if _, err := adminConn.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, targetDB)); err != nil {
             return fmt.Errorf("failed to create database %s: %w", targetDB, err)
         }
@@ -104,19 +106,19 @@ func (d *Database) Connect() error {
     for attempt := 1; attempt <= 5; attempt++ {
         fmt.Printf("🔄 Connecting attempt %d/5...\n", attempt)
         
-        config, err := pgxpool.ParseConfig(connStr)
+        poolConfig, err := pgxpool.ParseConfig(connStr)
         if err != nil {
             fmt.Printf("⏳ Error parsing config on attempt %d: %v\n", attempt, err)
             time.Sleep(2 * time.Second)
             continue
         }
         
-        d.pool, err = pgxpool.NewWithConfig(ctx, config)
+        d.pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
         if err == nil {
             err = d.pool.Ping(ctx)
             if err == nil {
-                if err := d.createTables(); err != nil {
-                    return fmt.Errorf("failed to create tables: %w", err)
+                if err := d.runMigrations(); err != nil {
+                    return fmt.Errorf("failed to run migrations: %w", err)
                 }
                 fmt.Println("✅ Connected!")
                 return nil
@@ -132,36 +134,28 @@ func (d *Database) Connect() error {
     return fmt.Errorf("failed to connect after 5 attempts: %w", err)
 }
 
-func (d *Database) createTables() error {
-    ctx := context.Background()
-    
-    queries := []string{
-        `CREATE TABLE IF NOT EXISTS checks (
-            id SERIAL PRIMARY KEY,
-            check_id VARCHAR(50) UNIQUE NOT NULL,
-            file_name VARCHAR(255) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`,
-        `CREATE TABLE IF NOT EXISTS product_names (
-            id SERIAL PRIMARY KEY,
-            product_name_string TEXT UNIQUE NOT NULL
-        )`,
-        `CREATE TABLE IF NOT EXISTS products (
-            id SERIAL PRIMARY KEY,
-            product_id INTEGER REFERENCES product_names(id),
-            check_id INTEGER REFERENCES checks(id),
-            price_per_unit DECIMAL(10,2),
-            amount_or_weight DECIMAL(10,3),
-            UNIQUE(product_id, check_id)
-        )`,
+func (d *Database) runMigrations() error {
+    cfg := config.GetDBConfig()
+    connStr := fmt.Sprintf(
+        "postgres://%s:%s@%s:%s/%s?sslmode=disable",
+        cfg.User, cfg.Password,
+        cfg.Host, cfg.Port,
+        cfg.DBName,
+    )
+
+    m, err := migrate.New(
+        "file://migrations",
+        connStr,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to create migrator: %w", err)
     }
 
-    for _, query := range queries {
-        if _, err := d.pool.Exec(ctx, query); err != nil {
-            return fmt.Errorf("failed to execute query: %w", err)
-        }
+    if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+        return fmt.Errorf("migration failed: %w", err)
     }
 
+    fmt.Println("✅ Migrations applied")
     return nil
 }
 
