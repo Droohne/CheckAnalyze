@@ -138,28 +138,28 @@ func (d *Database) Connect() error {
 }
 
 func (d *Database) runMigrations() error {
-	cfg := config.GetDBConfig()
-	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		cfg.User, cfg.Password,
-		cfg.Host, cfg.Port,
-		cfg.DBName,
-	)
+    cfg := config.GetDBConfig()
+    connStr := fmt.Sprintf(
+        "postgres://%s:%s@%s:%s/%s?sslmode=disable",
+        cfg.User, cfg.Password,
+        cfg.Host, cfg.Port,
+        cfg.DBName,
+    )
 
-	m, err := migrate.New(
-		"file://migrations",
-		connStr,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create migrator: %w", err)
-	}
+    m, err := migrate.New(
+        "file://database/migrations",  // ← fixed
+        connStr,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to create migrator: %w", err)
+    }
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("migration failed: %w", err)
-	}
+    if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+        return fmt.Errorf("migration failed: %w", err)
+    }
 
-	fmt.Println("✅ Migrations applied")
-	return nil
+    fmt.Println("✅ Migrations applied")
+    return nil
 }
 
 func (d *Database) Close() error {

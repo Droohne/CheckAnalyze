@@ -48,3 +48,6 @@ CREATE INDEX idx_product_relations_identical_product_id ON product_relations(ide
 CREATE INDEX idx_checks_check_id ON checks(check_id);
 CREATE INDEX idx_product_names_name ON product_names(name);
 CREATE INDEX idx_categories_name ON categories(name);
+
+-- Populate tables
+INSERT INTO categories (name) VALUES ('Uncategorized') ON CONFLICT (name) DO NOTHING;
