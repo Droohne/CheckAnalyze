@@ -5,7 +5,7 @@ import (
     "fmt"
     "os"
 
-    "check_scan/models"
+    "CheckAnalyze/models"
 )
 
 func ParseCheckJSON(filename string) (*models.ParsedCheck, error) {
@@ -19,6 +19,7 @@ func ParseCheckJSON(filename string) (*models.ParsedCheck, error) {
     }
 
     var checks []models.Check
+    // json.Unmarshal автоматически заполняет слайс за меня
     if err := json.Unmarshal(data, &checks); err != nil {
         return nil, fmt.Errorf("failed to parse JSON: %w", err)
     }
@@ -28,10 +29,6 @@ func ParseCheckJSON(filename string) (*models.ParsedCheck, error) {
     }
 
     checkItem := checks[0]
-    checkID := checkItem.ID
-    if checkID == "" {
-        checkID = "unknown"
-    }
 
     user := checkItem.Ticket.Document.Receipt.User
     if user == "" {
@@ -40,12 +37,12 @@ func ParseCheckJSON(filename string) (*models.ParsedCheck, error) {
 
     items := checkItem.Ticket.Document.Receipt.Items
 
-    fmt.Printf("📄 Check ID: %s\n", checkID)
+    fmt.Printf("📄 Check ID: %s\n", checkItem.ID)
     fmt.Printf("👤 User: %s\n", user)
     fmt.Printf("📦 Items: %d\n", len(items))
 
     return &models.ParsedCheck{
-        CheckID: checkID,
+        CheckID: checkItem.ID,
         User:    user,
         Items:   items,
     }, nil

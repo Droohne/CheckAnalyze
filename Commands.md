@@ -18,3 +18,6 @@ atlas migrate diff init --dir "file://migrations" --to "ent://./ent/schema" --de
 
 Если база не создана, то создать ее, если создана то просто применить
 atlas migrate apply --dir "file://migrations" --url "postgres://postgres:postgres@localhost:5432/Products?sslmode=disable"
+
+
+ORM так себе на фоне C# поэтому пишем честный sql и через sqlc генерим go-шный код на основе миграции и запросов. Создаем up / down миграции. Down миграцию помечаем как .down.sql чтобы sqlc ее игнорил

@@ -1,17 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"check_scan/database"
-	"check_scan/parser"
+	"CheckAnalyze/database"
+	"CheckAnalyze/database/sqlc"
+	"CheckAnalyze/parser"
 )
 
 func ProcessCheckFile(filename string) error {
+	ctx := context.Background()
 	db := database.New()
 
 	defer func() {
@@ -29,26 +32,45 @@ func ProcessCheckFile(filename string) error {
 		return fmt.Errorf("failed to parse check: %w", err)
 	}
 
-	dbCheckID, err := db.GetOrCreateCheck(check.CheckID, filename)
+	// GetOrCreateCheck with struct
+	dbCheck, err := db.GetOrCreateCheck(ctx, sqlc.GetOrCreateCheckParams{
+		CheckID:  check.CheckID,
+		FileName: filename,
+	})
 	if err != nil {
-		return fmt.Errorf("Error getting check ID: %w", err)
+		return fmt.Errorf("Error getting check: %w", err)
 	}
-	fmt.Printf("Database check ID: %d\n", dbCheckID)
+	fmt.Printf("Database check ID: %d\n", dbCheck.ID)
+
+	// Get or create default category
+	category, err := db.CreateCategory(ctx, "Default")
+	if err != nil {
+		return fmt.Errorf("failed to get/create category: %w", err)
+	}
 
 	savedCount := 0
 	for _, item := range check.Items {
-		priceRub := float64(item.Price) / 100.0 
+		priceRub := float64(item.Price) / 100.0
 		quantity := item.Quantity
 		if quantity == 0 {
 			quantity = 1.0
 		}
 
-		productID, err := db.GetOrCreateProductName(item.Name)
+		// GetOrCreateProductName with just name (single param)
+		product, err := db.GetOrCreateProductName(ctx, item.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get/create product %s: %w", item.Name, err)
 		}
 
-		if err := db.SaveProductToCheck(productID, dbCheckID, priceRub, quantity); err != nil {
+		// Create product entry with struct
+		_, err = db.CreateProduct(ctx, sqlc.CreateProductParams{
+			ProductID:       int32(product.ID),
+			CheckID:         int32(dbCheck.ID),
+			CategoryID:      int32(category.ID),
+			PricePerUnit:    priceRub,
+			AmountOrWeight:  quantity,
+		})
+		if err != nil {
 			return fmt.Errorf("failed to save product %s to check: %w", item.Name, err)
 		}
 		savedCount++
@@ -56,16 +78,16 @@ func ProcessCheckFile(filename string) error {
 
 	fmt.Printf("Saved %d items\n", savedCount)
 
-
-	stats, err := db.GetStats()
+	// Get stats
+	stats, err := db.GetStats(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get stats: %w", err)
 	}
 
 	fmt.Println("\nDatabase Statistics:")
-	fmt.Printf("   Checks: %d\n", stats.Checks)
-	fmt.Printf("   Unique Products: %d\n", stats.Products)
-	fmt.Printf("   Total Records: %d\n", stats.Total)
+	fmt.Printf("   Checks: %d\n", stats.TotalChecks)
+	fmt.Printf("   Unique Products: %d\n", stats.TotalUniqueProducts)
+	fmt.Printf("   Total Records: %d\n", stats.TotalProductEntries)
 
 	return nil
 }
