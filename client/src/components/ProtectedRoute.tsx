@@ -1,21 +1,16 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../context/AuthContext';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
-  console.log('ProtectedRoute - loading:', loading, 'user:', user);
-
   if (loading) {
-    console.log('Still loading...');
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>;
+    return <div>Loading...</div>;
   }
 
   if (!user) {
-    console.log('No user, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
-  console.log('User authenticated, rendering children');
   return children;
 }

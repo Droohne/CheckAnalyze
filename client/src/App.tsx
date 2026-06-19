@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import Home from './pages/Home';
 import Shops from './pages/Shops';
@@ -7,13 +7,19 @@ import Templates from './pages/Templates';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function Navigation() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const links = [
     { path: '/', label: 'Home' },
@@ -101,7 +107,7 @@ function Navigation() {
                   👤 Profile
                 </Link>
                 <button
-                  onClick={() => { logout(); setShowProfileMenu(false); }}
+                  onClick={() => { handleLogout(); setShowProfileMenu(false); }}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -143,7 +149,6 @@ function App() {
       <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif', color: '#0f172a' }}>
         <Navigation />
         <Routes>
-          // In Routes:
           <Route path="/" element={
             <ProtectedRoute>
               <Home />

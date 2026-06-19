@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { login as apiLogin, getProfile } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+
 
 interface User {
   id: number;
@@ -39,9 +41,12 @@ export function useAuth() {
       return user;
   };
 
+  const navigate = useNavigate();
+  // ...
   const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
+      localStorage.removeItem('token');
+      setUser(null);
+      navigate('/login');
   };
 
   return { user, loading, login, logout };
