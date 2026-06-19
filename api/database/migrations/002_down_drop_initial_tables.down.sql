@@ -3,4 +3,7 @@ DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS product_names;
 DROP TABLE IF EXISTS checks;
 DROP TABLE IF EXISTS categories;
-
+DROP TABLE IF EXISTS shops;
+DROP TABLE IF EXISTS template_products;
+DROP TABLE IF EXISTS templates;
+DROP TABLE IF EXISTS users;

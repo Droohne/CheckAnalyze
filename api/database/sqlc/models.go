@@ -16,6 +16,8 @@ type Category struct {
 type Check struct {
 	ID        int32
 	CheckID   string
+	ShopID    int32
+	UserID    int32
 	FileName  string
 	CreatedAt pgtype.Timestamp
 }
@@ -38,4 +40,34 @@ type ProductRelation struct {
 	ID                 int32
 	ProductID          int32
 	IdenticalProductID int32
+}
+
+type Shop struct {
+	ID      int32
+	Name    string
+	Address string
+	Lat     pgtype.Float8
+	Lng     pgtype.Float8
+}
+
+type Template struct {
+	ID        int32
+	Name      string
+	UserID    pgtype.Int4
+	IsDefault pgtype.Bool
+	CreatedAt pgtype.Timestamp
+}
+
+type TemplateProduct struct {
+	ID            int32
+	TemplateID    int32
+	ProductNameID int32
+}
+
+type User struct {
+	ID           int32
+	Email        string
+	PasswordHash string
+	Name         pgtype.Text
+	CreatedAt    pgtype.Timestamp
 }

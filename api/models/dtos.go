@@ -17,8 +17,9 @@ type Document struct {
 }
 
 type Receipt struct {
-	User  string `json:"user"`
-	Items []Item `json:"items"`
+	ShopFullname       string `json:"user"`
+	RetailPlaceAddress string `json:"retailPlaceAddress"`
+	Items              []Item `json:"items"`
 }
 
 type Item struct {
@@ -28,13 +29,14 @@ type Item struct {
 }
 
 type ParsedCheck struct {
-    CheckID string
-    User    string
-    Items   []Item
+	CheckID      string
+	ShopFullname string
+	Items        []Item
+	Address      string
 }
 
 type DBStats struct {
-    Checks   int64
-    Products int64
-    Total    int64
+	Checks   int64
+	Products int64
+	Total    int64
 }

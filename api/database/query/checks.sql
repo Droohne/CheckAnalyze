@@ -24,8 +24,8 @@ ORDER BY created_at DESC;
 
 -- name: GetOrCreateCheck :one
 WITH inserted AS (
-    INSERT INTO checks (check_id, file_name) 
-    VALUES ($1, $2) 
+    INSERT INTO checks (check_id, shop_id, file_name) 
+    VALUES ($1, $2, $3) 
     ON CONFLICT (check_id) DO NOTHING 
     RETURNING *
 )

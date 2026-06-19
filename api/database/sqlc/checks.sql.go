@@ -15,7 +15,7 @@ const createCheck = `-- name: CreateCheck :one
 INSERT INTO checks (check_id, file_name) 
 VALUES ($1, $2) 
 ON CONFLICT (check_id) DO NOTHING
-RETURNING id, check_id, file_name, created_at
+RETURNING id, check_id, shop_id, user_id, file_name, created_at
 `
 
 type CreateCheckParams struct {
@@ -29,6 +29,8 @@ func (q *Queries) CreateCheck(ctx context.Context, arg CreateCheckParams) (Check
 	err := row.Scan(
 		&i.ID,
 		&i.CheckID,
+		&i.ShopID,
+		&i.UserID,
 		&i.FileName,
 		&i.CreatedAt,
 	)
@@ -45,7 +47,7 @@ func (q *Queries) DeleteCheck(ctx context.Context, id int32) error {
 }
 
 const getCheckByCheckID = `-- name: GetCheckByCheckID :one
-SELECT id, check_id, file_name, created_at FROM checks WHERE check_id = $1
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM checks WHERE check_id = $1
 `
 
 func (q *Queries) GetCheckByCheckID(ctx context.Context, checkID string) (Check, error) {
@@ -54,6 +56,8 @@ func (q *Queries) GetCheckByCheckID(ctx context.Context, checkID string) (Check,
 	err := row.Scan(
 		&i.ID,
 		&i.CheckID,
+		&i.ShopID,
+		&i.UserID,
 		&i.FileName,
 		&i.CreatedAt,
 	)
@@ -61,7 +65,7 @@ func (q *Queries) GetCheckByCheckID(ctx context.Context, checkID string) (Check,
 }
 
 const getCheckByID = `-- name: GetCheckByID :one
-SELECT id, check_id, file_name, created_at FROM checks WHERE id = $1
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM checks WHERE id = $1
 `
 
 func (q *Queries) GetCheckByID(ctx context.Context, id int32) (Check, error) {
@@ -70,6 +74,8 @@ func (q *Queries) GetCheckByID(ctx context.Context, id int32) (Check, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.CheckID,
+		&i.ShopID,
+		&i.UserID,
 		&i.FileName,
 		&i.CreatedAt,
 	)
@@ -77,7 +83,7 @@ func (q *Queries) GetCheckByID(ctx context.Context, id int32) (Check, error) {
 }
 
 const getChecksByDateRange = `-- name: GetChecksByDateRange :many
-SELECT id, check_id, file_name, created_at FROM checks 
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM checks 
 WHERE ($1::timestamp IS NULL OR created_at >= $1)
 AND ($2::timestamp IS NULL OR created_at <= $2)
 ORDER BY created_at DESC
@@ -100,6 +106,8 @@ func (q *Queries) GetChecksByDateRange(ctx context.Context, arg GetChecksByDateR
 		if err := rows.Scan(
 			&i.ID,
 			&i.CheckID,
+			&i.ShopID,
+			&i.UserID,
 			&i.FileName,
 			&i.CreatedAt,
 		); err != nil {
@@ -115,35 +123,40 @@ func (q *Queries) GetChecksByDateRange(ctx context.Context, arg GetChecksByDateR
 
 const getOrCreateCheck = `-- name: GetOrCreateCheck :one
 WITH inserted AS (
-    INSERT INTO checks (check_id, file_name) 
-    VALUES ($1, $2) 
+    INSERT INTO checks (check_id, shop_id, file_name) 
+    VALUES ($1, $2, $3) 
     ON CONFLICT (check_id) DO NOTHING 
-    RETURNING id, check_id, file_name, created_at
+    RETURNING id, check_id, shop_id, user_id, file_name, created_at
 )
-SELECT id, check_id, file_name, created_at FROM inserted
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM inserted
 UNION ALL
-SELECT id, check_id, file_name, created_at FROM checks WHERE check_id = $1
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM checks WHERE check_id = $1
 LIMIT 1
 `
 
 type GetOrCreateCheckParams struct {
 	CheckID  string
+	ShopID   int32
 	FileName string
 }
 
 type GetOrCreateCheckRow struct {
 	ID        int32
 	CheckID   string
+	ShopID    int32
+	UserID    int32
 	FileName  string
 	CreatedAt pgtype.Timestamp
 }
 
 func (q *Queries) GetOrCreateCheck(ctx context.Context, arg GetOrCreateCheckParams) (GetOrCreateCheckRow, error) {
-	row := q.db.QueryRow(ctx, getOrCreateCheck, arg.CheckID, arg.FileName)
+	row := q.db.QueryRow(ctx, getOrCreateCheck, arg.CheckID, arg.ShopID, arg.FileName)
 	var i GetOrCreateCheckRow
 	err := row.Scan(
 		&i.ID,
 		&i.CheckID,
+		&i.ShopID,
+		&i.UserID,
 		&i.FileName,
 		&i.CreatedAt,
 	)
@@ -151,7 +164,7 @@ func (q *Queries) GetOrCreateCheck(ctx context.Context, arg GetOrCreateCheckPara
 }
 
 const listChecks = `-- name: ListChecks :many
-SELECT id, check_id, file_name, created_at FROM checks ORDER BY created_at DESC
+SELECT id, check_id, shop_id, user_id, file_name, created_at FROM checks ORDER BY created_at DESC
 `
 
 func (q *Queries) ListChecks(ctx context.Context) ([]Check, error) {
@@ -166,6 +179,8 @@ func (q *Queries) ListChecks(ctx context.Context) ([]Check, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.CheckID,
+			&i.ShopID,
+			&i.UserID,
 			&i.FileName,
 			&i.CreatedAt,
 		); err != nil {
