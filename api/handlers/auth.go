@@ -1,17 +1,15 @@
 package handlers
 
 import (
+	"CheckAnalyze/config"
 	"CheckAnalyze/database/sqlc"
 	"encoding/json"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
-
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 func generateToken(userID int32, email string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -19,7 +17,7 @@ func generateToken(userID int32, email string) (string, error) {
 		"email":   email,
 		"exp":     time.Now().Add(time.Hour * 24).Unix(),
 	})
-	return token.SignedString(jwtSecret)
+	return token.SignedString(config.JWTSecret)
 }
 
 func (h *Handlers) PostLogin(w http.ResponseWriter, r *http.Request) {

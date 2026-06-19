@@ -1,32 +1,54 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getLiveFeed } from '../api/client';
+import { uploadCheck } from '../api/client';
+
+interface FeedItem {
+  ProductName: string;
+  StoreName: string;
+  Price: number;
+}
 
 function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploaded, setUploaded] = useState(false);
+  const [error, setError] = useState('');
 
-  const liveFeed = [
-    { product: 'Хлеб белый', store: 'Магнит', price: '89.99 ₽' },
-    { product: 'Молоко 3.2%', store: 'Пятерочка', price: '79.50 ₽' },
-    { product: 'Яйца куриные', store: 'Перекресток', price: '129.00 ₽' },
-    { product: 'Сахар песок', store: 'Ашан', price: '59.90 ₽' },
-    { product: 'Масло подсолнечное', store: 'Лента', price: '149.00 ₽' },
-    { product: 'Гречка', store: 'Магнит', price: '89.99 ₽' },
-    { product: 'Курица', store: 'Пятерочка', price: '249.00 ₽' },
-    { product: 'Сыр', store: 'Перекресток', price: '189.00 ₽' },
-    { product: 'Рис', store: 'Ашан', price: '75.00 ₽' },
-    { product: 'Мука', store: 'Магнит', price: '55.00 ₽' },
-  ];
+  const { data: feedData, isLoading, refetch } = useQuery({
+    queryKey: ['liveFeed'],
+    queryFn: () => getLiveFeed().then(r => r.data),
+    refetchInterval: 30000,
+  });
 
-  const handleUpload = () => {
+  const liveFeed = feedData?.map((item: FeedItem) => ({
+    product: item.ProductName,
+    store: item.StoreName,
+    price: `${item.Price} ₽`,
+  })) || [];
+
+  const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
-    setTimeout(() => {
-      setUploading(false);
+    setError('');
+    
+    try {
+      await uploadCheck(file);
       setUploaded(true);
       setTimeout(() => setUploaded(false), 3000);
-    }, 1500);
+      refetch();
+    } catch (err: any) {
+  console.log('Error object:', err);
+  const message = err.response?.data?.message || err.message || 'Upload failed';
+  setError(message);
+} finally {
+      setUploading(false);
+    }
   };
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div style={{ 
@@ -61,6 +83,19 @@ function Home() {
             Загрузите JSON файл из приложения СканЧек
           </p>
           
+          {error && (
+            <div style={{ 
+              color: '#ef4444', 
+              fontSize: '14px', 
+              marginBottom: '12px',
+              padding: '8px 12px',
+              background: '#fee2e2',
+              borderRadius: '6px',
+            }}>
+              {error}
+            </div>
+          )}
+
           <div style={{ 
             border: '1px solid #e2e8f0', 
             borderRadius: '8px', 
@@ -116,64 +151,68 @@ function Home() {
           gap: '20px',
           whiteSpace: 'nowrap',
         }}>
-          {[...liveFeed, ...liveFeed].map((item, i) => (
-<div
-  key={i}
-  style={{
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '12px',
-    padding: '6px 14px',
-    background: '#ffffff',
-    borderRadius: '16px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-    border: '1px solid #e2e8f0',
-    flexShrink: 0,
-    maxWidth: '200px',
-    minWidth: '120px',
-  }}
->
-  <div style={{ 
-    display: 'flex', 
-    flexDirection: 'column', 
-    alignItems: 'flex-start',
-    overflow: 'hidden',
-    minWidth: 0,
-    flex: 1,
-  }}>
-    <span style={{ 
-      fontWeight: '600', 
-      fontSize: '13px', 
-      color: '#0f172a',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      maxWidth: '120px',
-    }}>
-      {item.product}
-    </span>
-    <span style={{ 
-      fontSize: '11px', 
-      color: '#64748b',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      maxWidth: '120px',
-    }}>
-      {item.store}
-    </span>
-  </div>
-  <span style={{ 
-    fontWeight: '700', 
-    fontSize: '14px', 
-    color: '#0f172a',
-    flexShrink: 0,
-  }}>
-    {item.price}
-  </span>
-</div>
-          ))}
+          {liveFeed.length === 0 ? (
+            <div style={{ padding: '10px', color: '#64748b' }}>No products yet</div>
+          ) : (
+            [...liveFeed, ...liveFeed].map((item, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '6px 14px',
+                  background: '#ffffff',
+                  borderRadius: '16px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  border: '1px solid #e2e8f0',
+                  flexShrink: 0,
+                  maxWidth: '200px',
+                  minWidth: '120px',
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  alignItems: 'flex-start',
+                  overflow: 'hidden',
+                  minWidth: 0,
+                  flex: 1,
+                }}>
+                  <span style={{ 
+                    fontWeight: '600', 
+                    fontSize: '13px', 
+                    color: '#0f172a',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '120px',
+                  }}>
+                    {item.product}
+                  </span>
+                  <span style={{ 
+                    fontSize: '11px', 
+                    color: '#64748b',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '120px',
+                  }}>
+                    {item.store}
+                  </span>
+                </div>
+                <span style={{ 
+                  fontWeight: '700', 
+                  fontSize: '14px', 
+                  color: '#0f172a',
+                  flexShrink: 0,
+                }}>
+                  {item.price}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

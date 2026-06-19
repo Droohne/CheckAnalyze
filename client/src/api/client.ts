@@ -76,3 +76,6 @@ export const uploadCheck = (file: File) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
 };
+
+export const getLiveFeed = (limit?: number) =>
+  api.get('/feed', { params: { limit } });

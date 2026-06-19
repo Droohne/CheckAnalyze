@@ -123,8 +123,8 @@ func (q *Queries) GetChecksByDateRange(ctx context.Context, arg GetChecksByDateR
 
 const getOrCreateCheck = `-- name: GetOrCreateCheck :one
 WITH inserted AS (
-    INSERT INTO checks (check_id, shop_id, file_name) 
-    VALUES ($1, $2, $3) 
+    INSERT INTO checks (check_id, shop_id, user_id, file_name) 
+    VALUES ($1, $2, $3, $4) 
     ON CONFLICT (check_id) DO NOTHING 
     RETURNING id, check_id, shop_id, user_id, file_name, created_at
 )
@@ -137,6 +137,7 @@ LIMIT 1
 type GetOrCreateCheckParams struct {
 	CheckID  string
 	ShopID   int32
+	UserID   int32
 	FileName string
 }
 
@@ -150,7 +151,12 @@ type GetOrCreateCheckRow struct {
 }
 
 func (q *Queries) GetOrCreateCheck(ctx context.Context, arg GetOrCreateCheckParams) (GetOrCreateCheckRow, error) {
-	row := q.db.QueryRow(ctx, getOrCreateCheck, arg.CheckID, arg.ShopID, arg.FileName)
+	row := q.db.QueryRow(ctx, getOrCreateCheck,
+		arg.CheckID,
+		arg.ShopID,
+		arg.UserID,
+		arg.FileName,
+	)
 	var i GetOrCreateCheckRow
 	err := row.Scan(
 		&i.ID,

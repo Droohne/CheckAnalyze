@@ -1,12 +1,15 @@
 package main
 
 import (
-	"context"
-	"net/http"
-
+	"CheckAnalyze/config"
 	"CheckAnalyze/database"
 	"CheckAnalyze/database/seed"
 	"CheckAnalyze/handlers"
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -21,6 +24,39 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenString := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if tokenString == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return config.JWTSecret, nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "user_id", int32(userIDFloat))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -61,13 +97,14 @@ func main() {
 	mux.HandleFunc("PUT /api/user/password", h.PutChangePassword)
 	mux.HandleFunc("DELETE /api/user", h.DeleteAccount)
 	mux.HandleFunc("GET /api/user/stats", h.GetUserStats)
-	mux.HandleFunc("POST /api/upload", h.PostUploadCheck)
+	mux.Handle("POST /api/upload", corsMiddleware(authMiddleware(http.HandlerFunc(h.PostUploadCheck))))
 	mux.HandleFunc("GET /api/categories/by-name", h.GetCategoryByName)
 	mux.HandleFunc("POST /api/categories", h.PostCreateCategory)
 	mux.HandleFunc("DELETE /api/categories/{id}", h.DeleteCategoryById)
 	mux.HandleFunc("GET /api/categories/by-product", h.GetCategoryByProductNameOrCreateUndefined)
 	mux.HandleFunc("POST /api/auth/login", h.PostLogin)
 	mux.HandleFunc("POST /api/auth/register", h.PostRegister)
+	mux.HandleFunc("GET /api/feed", h.GetLiveFeed)
 
 	// Wrap entire mux with CORS
 	http.ListenAndServe(":8080", corsMiddleware(mux))

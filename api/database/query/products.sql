@@ -118,3 +118,16 @@ JOIN product_names pn ON p.product_id = pn.id
 JOIN checks c ON p.check_id = c.id
 WHERE pn.name ILIKE '%' || $1 || '%'
 ORDER BY c.created_at DESC;
+
+-- name: GetLiveFeed :many
+SELECT 
+    pn.name as product_name,
+    s.name as store_name,
+    p.price_per_unit as price,
+    c.created_at
+FROM products p
+JOIN product_names pn ON p.product_id = pn.id
+JOIN checks c ON p.check_id = c.id
+JOIN shops s ON c.shop_id = s.id
+ORDER BY c.created_at DESC
+LIMIT $1;

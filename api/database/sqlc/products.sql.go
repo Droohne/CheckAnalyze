@@ -46,6 +46,52 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 	return i, err
 }
 
+const getLiveFeed = `-- name: GetLiveFeed :many
+SELECT 
+    pn.name as product_name,
+    s.name as store_name,
+    p.price_per_unit as price,
+    c.created_at
+FROM products p
+JOIN product_names pn ON p.product_id = pn.id
+JOIN checks c ON p.check_id = c.id
+JOIN shops s ON c.shop_id = s.id
+ORDER BY c.created_at DESC
+LIMIT $1
+`
+
+type GetLiveFeedRow struct {
+	ProductName string
+	StoreName   string
+	Price       float64
+	CreatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) GetLiveFeed(ctx context.Context, limit int32) ([]GetLiveFeedRow, error) {
+	rows, err := q.db.Query(ctx, getLiveFeed, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetLiveFeedRow
+	for rows.Next() {
+		var i GetLiveFeedRow
+		if err := rows.Scan(
+			&i.ProductName,
+			&i.StoreName,
+			&i.Price,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProductByID = `-- name: GetProductByID :one
 SELECT id, product_id, check_id, category_id, price_per_unit, amount_or_weight FROM products WHERE id = $1
 `

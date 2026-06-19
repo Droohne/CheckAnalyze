@@ -1,5 +1,7 @@
 package config
 
+import "os"
+
 type DBConfig struct {
     Host     string
     Port     string
@@ -27,3 +29,5 @@ func GetAdminConfig() DBConfig {
         DBName:   "postgres",
     }
 }
+
+var JWTSecret = []byte(os.Getenv("JWT_SECRET"))

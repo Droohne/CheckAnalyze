@@ -113,3 +113,23 @@ func (h *Handlers) PostAddIdenticalProduct(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(relation)
 }
+
+func (h *Handlers) GetLiveFeed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	limit := 20
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	feed, err := h.DB.GetLiveFeed(ctx, int32(limit))
+	if err != nil {
+		http.Error(w, "Failed to get feed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(feed)
+}
