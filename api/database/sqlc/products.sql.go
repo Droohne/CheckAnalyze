@@ -14,7 +14,9 @@ import (
 const createProduct = `-- name: CreateProduct :one
 INSERT INTO products (product_id, check_id, category_id, price_per_unit, amount_or_weight) 
 VALUES ($1, $2, $3, $4, $5) 
-ON CONFLICT (product_id, check_id) DO NOTHING 
+ON CONFLICT (product_id, check_id) DO UPDATE 
+SET amount_or_weight = products.amount_or_weight + EXCLUDED.amount_or_weight,
+    price_per_unit = EXCLUDED.price_per_unit
 RETURNING id, product_id, check_id, category_id, price_per_unit, amount_or_weight
 `
 
@@ -26,6 +28,7 @@ type CreateProductParams struct {
 	AmountOrWeight float64
 }
 
+// on conflict для молочки, идентичные товары идут разными позициями из-за специальных чеков
 func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error) {
 	row := q.db.QueryRow(ctx, createProduct,
 		arg.ProductID,
@@ -49,15 +52,16 @@ func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (P
 const getLiveFeed = `-- name: GetLiveFeed :many
 SELECT 
     pn.name as product_name,
-    s.name as store_name,
+    b.name as store_name,
     p.price_per_unit as price,
     c.created_at
 FROM products p
 JOIN product_names pn ON p.product_id = pn.id
 JOIN checks c ON p.check_id = c.id
 JOIN shops s ON c.shop_id = s.id
+JOIN shop_brands b ON s.brand_id = b.id
 ORDER BY c.created_at DESC
-LIMIT $1
+LIMIT $1::int
 `
 
 type GetLiveFeedRow struct {
@@ -67,8 +71,8 @@ type GetLiveFeedRow struct {
 	CreatedAt   pgtype.Timestamp
 }
 
-func (q *Queries) GetLiveFeed(ctx context.Context, limit int32) ([]GetLiveFeedRow, error) {
-	rows, err := q.db.Query(ctx, getLiveFeed, limit)
+func (q *Queries) GetLiveFeed(ctx context.Context, limitParam int32) ([]GetLiveFeedRow, error) {
+	rows, err := q.db.Query(ctx, getLiveFeed, limitParam)
 	if err != nil {
 		return nil, err
 	}

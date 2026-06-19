@@ -9,10 +9,16 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create shop_brands table
+CREATE TABLE IF NOT EXISTS shop_brands (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+);
+
 -- Create shops table
 CREATE TABLE IF NOT EXISTS shops (
     id SERIAL PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
+    brand_id INTEGER NOT NULL,
     address text UNIQUE NOT NULL,
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION

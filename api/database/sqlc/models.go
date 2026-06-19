@@ -44,10 +44,15 @@ type ProductRelation struct {
 
 type Shop struct {
 	ID      int32
-	Name    string
+	BrandID int32
 	Address string
 	Lat     pgtype.Float8
 	Lng     pgtype.Float8
+}
+
+type ShopBrand struct {
+	ID   int32
+	Name string
 }
 
 type Template struct {

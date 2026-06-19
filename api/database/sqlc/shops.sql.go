@@ -14,22 +14,23 @@ import (
 const compareShopsByTemplate = `-- name: CompareShopsByTemplate :many
 SELECT 
     s.id,
-    s.name,
+    b.name as brand_name,
     s.address,
     SUM(p.price_per_unit * p.amount_or_weight) as total_price,
     COUNT(p.id) as product_count
 FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
 JOIN checks c ON s.id = c.shop_id
 JOIN products p ON c.id = p.check_id
 JOIN product_names pn ON p.product_id = pn.id
 WHERE pn.name = ANY($1::text[])
-GROUP BY s.id, s.name, s.address
+GROUP BY s.id, b.name, s.address
 ORDER BY total_price ASC
 `
 
 type CompareShopsByTemplateRow struct {
 	ID           int32
-	Name         string
+	BrandName    string
 	Address      string
 	TotalPrice   int64
 	ProductCount int64
@@ -46,7 +47,7 @@ func (q *Queries) CompareShopsByTemplate(ctx context.Context, dollar_1 []string)
 		var i CompareShopsByTemplateRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.BrandName,
 			&i.Address,
 			&i.TotalPrice,
 			&i.ProductCount,
@@ -62,23 +63,23 @@ func (q *Queries) CompareShopsByTemplate(ctx context.Context, dollar_1 []string)
 }
 
 const createShop = `-- name: CreateShop :one
-INSERT INTO shops (name, address, lat, lng) 
-VALUES ($1, $2, NULL, NULL) 
-ON CONFLICT (name) DO NOTHING 
-RETURNING id, name, address, lat, lng
+INSERT INTO shops (brand_id, address) 
+VALUES ($1, $2) 
+ON CONFLICT (address) DO NOTHING 
+RETURNING id, brand_id, address, lat, lng
 `
 
 type CreateShopParams struct {
-	Name    string
+	BrandID int32
 	Address string
 }
 
 func (q *Queries) CreateShop(ctx context.Context, arg CreateShopParams) (Shop, error) {
-	row := q.db.QueryRow(ctx, createShop, arg.Name, arg.Address)
+	row := q.db.QueryRow(ctx, createShop, arg.BrandID, arg.Address)
 	var i Shop
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
+		&i.BrandID,
 		&i.Address,
 		&i.Lat,
 		&i.Lng,
@@ -96,7 +97,7 @@ func (q *Queries) DeleteShop(ctx context.Context, id int32) error {
 }
 
 const getShopByAddress = `-- name: GetShopByAddress :one
-SELECT id, name, address, lat, lng FROM shops WHERE address = $1
+SELECT id, brand_id, address, lat, lng FROM shops WHERE address = $1
 `
 
 func (q *Queries) GetShopByAddress(ctx context.Context, address string) (Shop, error) {
@@ -104,7 +105,7 @@ func (q *Queries) GetShopByAddress(ctx context.Context, address string) (Shop, e
 	var i Shop
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
+		&i.BrandID,
 		&i.Address,
 		&i.Lat,
 		&i.Lng,
@@ -113,35 +114,31 @@ func (q *Queries) GetShopByAddress(ctx context.Context, address string) (Shop, e
 }
 
 const getShopByID = `-- name: GetShopByID :one
-SELECT id, name, address, lat, lng FROM shops WHERE id = $1
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+WHERE s.id = $1
 `
 
-func (q *Queries) GetShopByID(ctx context.Context, id int32) (Shop, error) {
-	row := q.db.QueryRow(ctx, getShopByID, id)
-	var i Shop
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Address,
-		&i.Lat,
-		&i.Lng,
-	)
-	return i, err
+type GetShopByIDRow struct {
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
 }
 
-const getShopByName = `-- name: GetShopByName :one
-SELECT id, name, address, lat, lng FROM shops WHERE name = $1
-`
-
-func (q *Queries) GetShopByName(ctx context.Context, name string) (Shop, error) {
-	row := q.db.QueryRow(ctx, getShopByName, name)
-	var i Shop
+func (q *Queries) GetShopByID(ctx context.Context, id int32) (GetShopByIDRow, error) {
+	row := q.db.QueryRow(ctx, getShopByID, id)
+	var i GetShopByIDRow
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
+		&i.BrandID,
 		&i.Address,
 		&i.Lat,
 		&i.Lng,
+		&i.BrandName,
 	)
 	return i, err
 }
@@ -149,21 +146,22 @@ func (q *Queries) GetShopByName(ctx context.Context, name string) (Shop, error) 
 const getShopStats = `-- name: GetShopStats :one
 SELECT 
     s.id,
-    s.name,
+    b.name as brand_name,
     s.address,
     COUNT(DISTINCT c.id) as check_count,
     COUNT(p.id) as product_count,
     AVG(p.price_per_unit) as avg_price
 FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
 LEFT JOIN checks c ON s.id = c.shop_id
 LEFT JOIN products p ON c.id = p.check_id
 WHERE s.id = $1
-GROUP BY s.id, s.name, s.address
+GROUP BY s.id, b.name, s.address
 `
 
 type GetShopStatsRow struct {
 	ID           int32
-	Name         string
+	BrandName    string
 	Address      string
 	CheckCount   int64
 	ProductCount int64
@@ -175,7 +173,7 @@ func (q *Queries) GetShopStats(ctx context.Context, id int32) (GetShopStatsRow, 
 	var i GetShopStatsRow
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
+		&i.BrandName,
 		&i.Address,
 		&i.CheckCount,
 		&i.ProductCount,
@@ -184,12 +182,57 @@ func (q *Queries) GetShopStats(ctx context.Context, id int32) (GetShopStatsRow, 
 	return i, err
 }
 
+const getShopsByBrand = `-- name: GetShopsByBrand :many
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+WHERE b.name = $1
+ORDER BY s.address
+`
+
+type GetShopsByBrandRow struct {
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
+}
+
+func (q *Queries) GetShopsByBrand(ctx context.Context, name string) ([]GetShopsByBrandRow, error) {
+	rows, err := q.db.Query(ctx, getShopsByBrand, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetShopsByBrandRow
+	for rows.Next() {
+		var i GetShopsByBrandRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.BrandID,
+			&i.Address,
+			&i.Lat,
+			&i.Lng,
+			&i.BrandName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getShopsNearby = `-- name: GetShopsNearby :many
-SELECT id, name, address, lat, lng,
-    ( 6371 * acos( cos( radians($1::float8) ) * cos( radians(lat) ) * cos( radians(lng) - radians($2::float8) ) + sin( radians($1::float8) ) * sin( radians(lat) ) ) ) AS distance
-FROM shops
-WHERE lat IS NOT NULL AND lng IS NOT NULL
-    AND ( 6371 * acos( cos( radians($1::float8) ) * cos( radians(lat) ) * cos( radians(lng) - radians($2::float8) ) + sin( radians($1::float8) ) * sin( radians(lat) ) ) ) < $3::float8
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name,
+    ( 6371 * acos( cos( radians($1::float8) ) * cos( radians(s.lat) ) * cos( radians(s.lng) - radians($2::float8) ) + sin( radians($1::float8) ) * sin( radians(s.lat) ) ) ) AS distance
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+WHERE s.lat IS NOT NULL AND s.lng IS NOT NULL
+    AND ( 6371 * acos( cos( radians($1::float8) ) * cos( radians(s.lat) ) * cos( radians(s.lng) - radians($2::float8) ) + sin( radians($1::float8) ) * sin( radians(s.lat) ) ) ) < $3::float8
 ORDER BY distance
 LIMIT $4::int
 `
@@ -202,12 +245,13 @@ type GetShopsNearbyParams struct {
 }
 
 type GetShopsNearbyRow struct {
-	ID       int32
-	Name     string
-	Address  string
-	Lat      pgtype.Float8
-	Lng      pgtype.Float8
-	Distance int32
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
+	Distance  int32
 }
 
 func (q *Queries) GetShopsNearby(ctx context.Context, arg GetShopsNearbyParams) ([]GetShopsNearbyRow, error) {
@@ -226,10 +270,11 @@ func (q *Queries) GetShopsNearby(ctx context.Context, arg GetShopsNearbyParams) 
 		var i GetShopsNearbyRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.BrandID,
 			&i.Address,
 			&i.Lat,
 			&i.Lng,
+			&i.BrandName,
 			&i.Distance,
 		); err != nil {
 			return nil, err
@@ -244,25 +289,38 @@ func (q *Queries) GetShopsNearby(ctx context.Context, arg GetShopsNearbyParams) 
 
 const listShops = `-- name: ListShops :many
 
-SELECT id, name, address, lat, lng FROM shops ORDER BY name
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+ORDER BY b.name
 `
 
+type ListShopsRow struct {
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
+}
+
 // database/query/shops.sql
-func (q *Queries) ListShops(ctx context.Context) ([]Shop, error) {
+func (q *Queries) ListShops(ctx context.Context) ([]ListShopsRow, error) {
 	rows, err := q.db.Query(ctx, listShops)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Shop
+	var items []ListShopsRow
 	for rows.Next() {
-		var i Shop
+		var i ListShopsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.BrandID,
 			&i.Address,
 			&i.Lat,
 			&i.Lng,
+			&i.BrandName,
 		); err != nil {
 			return nil, err
 		}
@@ -275,27 +333,38 @@ func (q *Queries) ListShops(ctx context.Context) ([]Shop, error) {
 }
 
 const searchShops = `-- name: SearchShops :many
-SELECT id, name, address, lat, lng
-FROM shops
-WHERE name ILIKE '%' || $1 || '%' OR address ILIKE '%' || $1 || '%'
-ORDER BY name
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+WHERE b.name ILIKE '%' || $1 || '%' OR s.address ILIKE '%' || $1 || '%'
+ORDER BY b.name
 `
 
-func (q *Queries) SearchShops(ctx context.Context, dollar_1 pgtype.Text) ([]Shop, error) {
+type SearchShopsRow struct {
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
+}
+
+func (q *Queries) SearchShops(ctx context.Context, dollar_1 pgtype.Text) ([]SearchShopsRow, error) {
 	rows, err := q.db.Query(ctx, searchShops, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Shop
+	var items []SearchShopsRow
 	for rows.Next() {
-		var i Shop
+		var i SearchShopsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.BrandID,
 			&i.Address,
 			&i.Lat,
 			&i.Lng,
+			&i.BrandName,
 		); err != nil {
 			return nil, err
 		}
@@ -308,27 +377,39 @@ func (q *Queries) SearchShops(ctx context.Context, dollar_1 pgtype.Text) ([]Shop
 }
 
 const searchShopsWithLocation = `-- name: SearchShopsWithLocation :many
-SELECT id, name, address, lat, lng FROM shops
-WHERE (name ILIKE '%' || $1::text || '%' OR address ILIKE '%' || $1::text || '%')
-AND lat IS NOT NULL AND lng IS NOT NULL
-ORDER BY name
+SELECT s.id, s.brand_id, s.address, s.lat, s.lng, b.name as brand_name
+FROM shops s
+JOIN shop_brands b ON s.brand_id = b.id
+WHERE (b.name ILIKE '%' || $1 || '%' OR s.address ILIKE '%' || $1 || '%')
+AND s.lat IS NOT NULL AND s.lng IS NOT NULL
+ORDER BY b.name
 `
 
-func (q *Queries) SearchShopsWithLocation(ctx context.Context, dollar_1 string) ([]Shop, error) {
+type SearchShopsWithLocationRow struct {
+	ID        int32
+	BrandID   int32
+	Address   string
+	Lat       pgtype.Float8
+	Lng       pgtype.Float8
+	BrandName string
+}
+
+func (q *Queries) SearchShopsWithLocation(ctx context.Context, dollar_1 pgtype.Text) ([]SearchShopsWithLocationRow, error) {
 	rows, err := q.db.Query(ctx, searchShopsWithLocation, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Shop
+	var items []SearchShopsWithLocationRow
 	for rows.Next() {
-		var i Shop
+		var i SearchShopsWithLocationRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
+			&i.BrandID,
 			&i.Address,
 			&i.Lat,
 			&i.Lng,
+			&i.BrandName,
 		); err != nil {
 			return nil, err
 		}
@@ -342,26 +423,32 @@ func (q *Queries) SearchShopsWithLocation(ctx context.Context, dollar_1 string) 
 
 const updateShop = `-- name: UpdateShop :one
 UPDATE shops 
-SET name = $2, address = $3
+SET address = $2, lat = $3, lng = $4
 WHERE id = $1
-RETURNING id, name, address
+RETURNING id, brand_id, address, lat, lng
 `
 
 type UpdateShopParams struct {
 	ID      int32
-	Name    string
 	Address string
+	Lat     pgtype.Float8
+	Lng     pgtype.Float8
 }
 
-type UpdateShopRow struct {
-	ID      int32
-	Name    string
-	Address string
-}
-
-func (q *Queries) UpdateShop(ctx context.Context, arg UpdateShopParams) (UpdateShopRow, error) {
-	row := q.db.QueryRow(ctx, updateShop, arg.ID, arg.Name, arg.Address)
-	var i UpdateShopRow
-	err := row.Scan(&i.ID, &i.Name, &i.Address)
+func (q *Queries) UpdateShop(ctx context.Context, arg UpdateShopParams) (Shop, error) {
+	row := q.db.QueryRow(ctx, updateShop,
+		arg.ID,
+		arg.Address,
+		arg.Lat,
+		arg.Lng,
+	)
+	var i Shop
+	err := row.Scan(
+		&i.ID,
+		&i.BrandID,
+		&i.Address,
+		&i.Lat,
+		&i.Lng,
+	)
 	return i, err
 }

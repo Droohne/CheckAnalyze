@@ -1,7 +1,10 @@
 -- name: CreateProduct :one
+-- on conflict для молочки, идентичные товары идут разными позициями из-за специальных чеков
 INSERT INTO products (product_id, check_id, category_id, price_per_unit, amount_or_weight) 
 VALUES ($1, $2, $3, $4, $5) 
-ON CONFLICT (product_id, check_id) DO NOTHING 
+ON CONFLICT (product_id, check_id) DO UPDATE 
+SET amount_or_weight = products.amount_or_weight + EXCLUDED.amount_or_weight,
+    price_per_unit = EXCLUDED.price_per_unit
 RETURNING *;
 
 -- name: GetProductByID :one
@@ -122,12 +125,13 @@ ORDER BY c.created_at DESC;
 -- name: GetLiveFeed :many
 SELECT 
     pn.name as product_name,
-    s.name as store_name,
+    b.name as store_name,
     p.price_per_unit as price,
     c.created_at
 FROM products p
 JOIN product_names pn ON p.product_id = pn.id
 JOIN checks c ON p.check_id = c.id
 JOIN shops s ON c.shop_id = s.id
+JOIN shop_brands b ON s.brand_id = b.id
 ORDER BY c.created_at DESC
-LIMIT $1;
+LIMIT @limit_param::int;
