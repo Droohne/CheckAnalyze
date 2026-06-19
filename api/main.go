@@ -1,11 +1,28 @@
 package main
 
 import (
+	"context"
 	"net/http"
 
 	"CheckAnalyze/database"
+	"CheckAnalyze/database/seed"
 	"CheckAnalyze/handlers"
 )
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	db := database.New()
@@ -14,37 +31,44 @@ func main() {
 	}
 	defer db.Close()
 
+	ctx := context.Background()
+	seed.SeedUsers(ctx, db)
+
 	h := handlers.New(db)
 
-	// Routes
-	http.HandleFunc("GET /api/stats", h.GetStats)
-	http.HandleFunc("GET /api/Shops", h.GetListShops)
-	http.HandleFunc("GET /api/Shops/nearby", h.GetNearbyShopsByAddress)
-	http.HandleFunc("GET /api/Shops/search", h.GetNearbyShopsByAddress)
-	http.HandleFunc("POST /api/Shops/compare", h.PostCompareShopsOnTemplate)
-	http.HandleFunc("GET /api/products", h.GetListProducts)
-	http.HandleFunc("GET /api/products/{id}", h.GetProductById)
-	http.HandleFunc("GET /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
-	http.HandleFunc("POST /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
-	http.HandleFunc("GET /api/categories", h.GetListCategories)
-	http.HandleFunc("GET /api/templates", h.GetListTemplates)
-	http.HandleFunc("GET /api/templates/default", h.GetListDefaultTemplates)
-	http.HandleFunc("GET /api/templates/user", h.GetListUserTemplates)
-	http.HandleFunc("POST /api/templates", h.PostCreateTemplate)
-	http.HandleFunc("PUT /api/templates/{id}", h.PutUpdateTemplate)
-	http.HandleFunc("DELETE /api/templates/{id}", h.DeleteTemplateById)
-	http.HandleFunc("POST /api/templates/{id}/copy", h.PostCopyTemplateById)
-	http.HandleFunc("GET /api/user/profile", h.GetProfile)
-	http.HandleFunc("PUT /api/user/profile", h.PutUpdateProfile)
-	http.HandleFunc("PUT /api/user/password", h.PutChangePassword)
-	http.HandleFunc("DELETE /api/user", h.DeleteAccount)
-	http.HandleFunc("GET /api/user/stats", h.GetUserStats)
-	http.HandleFunc("POST /api/upload", h.PostUploadCheck)
-	http.HandleFunc("GET /api/categories", h.GetListCategories)
-	http.HandleFunc("GET /api/categories/by-name", h.GetCategoryByName)
-	http.HandleFunc("POST /api/categories", h.PostCreateCategory)
-	http.HandleFunc("DELETE /api/categories/{id}", h.DeleteCategoryById)
-	http.HandleFunc("GET /api/categories/by-product", h.GetCategoryByProductNameOrCreateUndefined)
+	mux := http.NewServeMux()
 
-	http.ListenAndServe(":8080", nil)
+	// Routes
+	mux.HandleFunc("GET /api/stats", h.GetStats)
+	mux.HandleFunc("GET /api/shops", h.GetListShops)
+	mux.HandleFunc("GET /api/shops/nearby", h.GetNearbyShopsByAddress)
+	mux.HandleFunc("GET /api/shops/search", h.GetNearbyShopsByAddress)
+	mux.HandleFunc("POST /api/shops/compare", h.PostCompareShopsOnTemplate)
+	mux.HandleFunc("GET /api/products", h.GetListProducts)
+	mux.HandleFunc("GET /api/products/{id}", h.GetProductById)
+	mux.HandleFunc("GET /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
+	mux.HandleFunc("POST /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
+	mux.HandleFunc("GET /api/categories", h.GetListCategories)
+	mux.HandleFunc("GET /api/templates", h.GetListTemplates)
+	mux.HandleFunc("GET /api/templates/default", h.GetListDefaultTemplates)
+	mux.HandleFunc("GET /api/templates/user", h.GetListUserTemplates)
+	mux.HandleFunc("POST /api/templates", h.PostCreateTemplate)
+	mux.HandleFunc("PUT /api/templates/{id}", h.PutUpdateTemplate)
+	mux.HandleFunc("DELETE /api/templates/{id}", h.DeleteTemplateById)
+	mux.HandleFunc("POST /api/templates/{id}/copy", h.PostCopyTemplateById)
+	mux.HandleFunc("GET /api/user/profile", h.GetProfile)
+	mux.HandleFunc("PUT /api/user/profile", h.PutUpdateProfile)
+	mux.HandleFunc("PUT /api/user/password", h.PutChangePassword)
+	mux.HandleFunc("DELETE /api/user", h.DeleteAccount)
+	mux.HandleFunc("GET /api/user/stats", h.GetUserStats)
+	mux.HandleFunc("POST /api/upload", h.PostUploadCheck)
+	mux.HandleFunc("GET /api/categories/by-name", h.GetCategoryByName)
+	mux.HandleFunc("POST /api/categories", h.PostCreateCategory)
+	mux.HandleFunc("DELETE /api/categories/{id}", h.DeleteCategoryById)
+	mux.HandleFunc("GET /api/categories/by-product", h.GetCategoryByProductNameOrCreateUndefined)
+	mux.HandleFunc("POST /api/auth/login", h.PostLogin)
+	mux.HandleFunc("POST /api/auth/register", h.PostRegister)
+
+	// Wrap entire mux with CORS
+	http.ListenAndServe(":8080", corsMiddleware(mux))
 }

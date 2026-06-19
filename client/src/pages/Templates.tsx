@@ -296,8 +296,9 @@ function Templates() {
                     borderRadius: '12px', 
                     fontSize: '13px',
                     cursor: 'pointer',
-                    ':hover': { background: '#e2e8f0' },
                   }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#e2e8f0'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#f1f5f9'}
                 >
                   + {p}
                 </span>

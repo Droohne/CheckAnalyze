@@ -7,21 +7,19 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 
 INSERT INTO users (email, password_hash, name) 
-VALUES ($1, $2, $3) 
+VALUES ($1::text, $2::text, $3::text) 
 RETURNING id, email, password_hash, name, created_at
 `
 
 type CreateUserParams struct {
 	Email        string
 	PasswordHash string
-	Name         pgtype.Text
+	Name         string
 }
 
 // database/query/users.sql

@@ -2,7 +2,7 @@
 
 -- name: CreateUser :one
 INSERT INTO users (email, password_hash, name) 
-VALUES ($1, $2, $3) 
+VALUES (sqlc.arg(email)::text, sqlc.arg(password_hash)::text, sqlc.arg(name)::text) 
 RETURNING *;
 
 -- name: GetUserByID :one
