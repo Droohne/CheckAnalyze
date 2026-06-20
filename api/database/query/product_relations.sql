@@ -1,8 +1,25 @@
 -- name: CreateProductRelation :one
-INSERT INTO product_relations (product_id, identical_product_id) 
-VALUES ($1, $2), ($2, $1)
-ON CONFLICT (product_id, identical_product_id) DO NOTHING 
-RETURNING *;
+WITH target_name AS (
+    SELECT pn.id as name_id
+    FROM products p
+    JOIN product_names pn ON p.product_id = pn.id
+    WHERE p.id = $2
+),
+inherited AS (
+    SELECT identical_product_id FROM product_relations WHERE product_id = $2
+),
+all_ids AS (
+    SELECT name_id as id FROM target_name
+    UNION ALL
+    SELECT identical_product_id FROM inherited
+),
+inserted AS (
+    INSERT INTO product_relations (product_id, identical_product_id) 
+    SELECT $1, id FROM all_ids
+    ON CONFLICT (product_id, identical_product_id) DO NOTHING 
+    RETURNING *
+)
+SELECT * FROM inserted;
 
 -- name: GetProductRelationsByProductID :many
 SELECT * FROM product_relations WHERE product_id = $1;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getProducts } from '../api/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getProducts, addIdenticalProduct } from '../api/client';
 
 interface Product {
   ID: number;
@@ -17,15 +17,38 @@ function Catalog() {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('Все');
   const [sortBy, setSortBy] = useState('popularity');
+  const [mainProduct, setMainProduct] = useState<Product | null>(null);
+  const [linkingMode, setLinkingMode] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['products'],
     queryFn: () => getProducts().then(r => r.data),
   });
 
+  console.log('allProducts count:', Array.isArray(data) ? data.length : 0);
+
+  const linkMutation = useMutation({
+    mutationFn: ({ id, identicalId }: { id: number; identicalId: number }) => {
+      console.log('Linking:', id, '->', identicalId);
+      return addIdenticalProduct(id, identicalId);
+    },
+    onSuccess: (data) => {
+      console.log('Link success, response:', data);
+      console.log('Products before invalidate:', Array.isArray(data) ? data.length : 'N/A');
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      setMainProduct(null);
+      setLinkingMode(false);
+    },
+    onError: (error) => {
+      console.error('Link mutation error:', error);
+    },
+  });
+
   const allProducts: Product[] = Array.isArray(data) ? data : [];
 
-  // Deduplicate by ProductName, keep latest entry (highest ID or most recent)
+  console.log('allProducts sample (first 3):', allProducts.slice(0, 3).map(p => ({ ID: p.ID, ProductName: p.ProductName })));
+
   const products = Object.values(
     allProducts.reduce((acc: Record<string, Product>, product) => {
       const existing = acc[product.ProductName];
@@ -35,6 +58,8 @@ function Catalog() {
       return acc;
     }, {})
   );
+
+  console.log('deduplicated products count:', products.length);
 
   const categories: string[] = ['Все', ...new Set(products.map((p) => p.CategoryName || 'Без категории'))];
 
@@ -47,12 +72,9 @@ function Catalog() {
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case 'price_asc':
-          return a.PricePerUnit - b.PricePerUnit;
-        case 'price_desc':
-          return b.PricePerUnit - a.PricePerUnit;
-        case 'name':
-          return a.ProductName.localeCompare(b.ProductName);
+        case 'price_asc': return a.PricePerUnit - b.PricePerUnit;
+        case 'price_desc': return b.PricePerUnit - a.PricePerUnit;
+        case 'name': return a.ProductName.localeCompare(b.ProductName);
         case 'popularity':
         default:
           const countA = allProducts.filter(p => p.ProductName === a.ProductName).length;
@@ -61,60 +83,49 @@ function Catalog() {
       }
     });
 
+  console.log('filteredProducts count:', filteredProducts.length);
+
+  const handleProductClick = (product: Product) => {
+    console.log('Product clicked:', product.ID, product.ProductName, 'linkingMode:', linkingMode, 'mainProduct:', mainProduct?.ID);
+    if (linkingMode && mainProduct && product.ID !== mainProduct.ID) {
+      linkMutation.mutate({ id: mainProduct.ID, identicalId: product.ID });
+    }
+  };
+
+  const startLinking = (product: Product) => {
+    console.log('Start linking product:', product.ID, product.ProductName);
+    setMainProduct(product);
+    setLinkingMode(true);
+  };
+
   if (isLoading) {
-    return (
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#64748b' }}>Загрузка...</div>
-      </div>
-    );
+    return <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}><div style={{ fontSize: '18px', color: '#64748b' }}>Загрузка...</div></div>;
   }
 
   if (error) {
-    return (
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#ef4444' }}>Ошибка загрузки данных</div>
-      </div>
-    );
+    return <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}><div style={{ fontSize: '18px', color: '#ef4444' }}>Ошибка загрузки данных</div></div>;
   }
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px' }}>
       
+      {linkingMode && mainProduct && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '12px', padding: '12px 20px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontWeight: '600' }}>Связывание:</span> выберите продукт, идентичный <strong>{mainProduct.ProductName}</strong>
+          </div>
+          <button onClick={() => { setMainProduct(null); setLinkingMode(false); }}
+            style={{ padding: '6px 16px', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}>
+            Отмена
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
         <h1 style={{ fontSize: '28px', fontWeight: '700', margin: '0' }}>📦 Каталог</h1>
         <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
-          <button
-            onClick={() => setViewMode('personal')}
-            style={{
-              padding: '6px 16px',
-              border: 'none',
-              borderRadius: '6px',
-              background: viewMode === 'personal' ? '#ffffff' : 'transparent',
-              color: viewMode === 'personal' ? '#0f172a' : '#64748b',
-              fontSize: '13px',
-              fontWeight: viewMode === 'personal' ? '500' : '400',
-              cursor: 'pointer',
-              boxShadow: viewMode === 'personal' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
-          >
-            Личные
-          </button>
-          <button
-            onClick={() => setViewMode('global')}
-            style={{
-              padding: '6px 16px',
-              border: 'none',
-              borderRadius: '6px',
-              background: viewMode === 'global' ? '#ffffff' : 'transparent',
-              color: viewMode === 'global' ? '#0f172a' : '#64748b',
-              fontSize: '13px',
-              fontWeight: viewMode === 'global' ? '500' : '400',
-              cursor: 'pointer',
-              boxShadow: viewMode === 'global' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
-          >
-            Все данные
-          </button>
+          <button onClick={() => setViewMode('personal')} style={{ padding: '6px 16px', border: 'none', borderRadius: '6px', background: viewMode === 'personal' ? '#ffffff' : 'transparent', color: viewMode === 'personal' ? '#0f172a' : '#64748b', fontSize: '13px', fontWeight: viewMode === 'personal' ? '500' : '400', cursor: 'pointer', boxShadow: viewMode === 'personal' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Личные</button>
+          <button onClick={() => setViewMode('global')} style={{ padding: '6px 16px', border: 'none', borderRadius: '6px', background: viewMode === 'global' ? '#ffffff' : 'transparent', color: viewMode === 'global' ? '#0f172a' : '#64748b', fontSize: '13px', fontWeight: viewMode === 'global' ? '500' : '400', cursor: 'pointer', boxShadow: viewMode === 'global' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Все данные</button>
         </div>
       </div>
       <p style={{ color: '#64748b', margin: '0 0 32px 0', fontSize: '16px' }}>
@@ -122,47 +133,14 @@ function Catalog() {
       </p>
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <input 
-          type="text" 
-          placeholder="Поиск продуктов..." 
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ 
-            flex: 1, 
-            minWidth: '200px', 
-            padding: '10px 16px', 
-            borderRadius: '8px', 
-            border: '1px solid #e2e8f0', 
-            fontSize: '14px',
-            outline: 'none',
-          }}
-        />
-        <select 
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          style={{ 
-            padding: '10px 16px', 
-            borderRadius: '8px', 
-            border: '1px solid #e2e8f0', 
-            fontSize: '14px', 
-            background: '#ffffff',
-            cursor: 'pointer',
-          }}
-        >
+        <input type="text" placeholder="Поиск продуктов..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: '200px', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none' }} />
+        <select value={category} onChange={(e) => setCategory(e.target.value)}
+          style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: '#ffffff', cursor: 'pointer' }}>
           {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select 
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          style={{ 
-            padding: '10px 16px', 
-            borderRadius: '8px', 
-            border: '1px solid #e2e8f0', 
-            fontSize: '14px', 
-            background: '#ffffff',
-            cursor: 'pointer',
-          }}
-        >
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+          style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: '#ffffff', cursor: 'pointer' }}>
           <option value="popularity">По популярности</option>
           <option value="price_asc">Цена: по возрастанию</option>
           <option value="price_desc">Цена: по убыванию</option>
@@ -171,46 +149,41 @@ function Catalog() {
       </div>
 
       {filteredProducts.length === 0 ? (
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '60px 20px', 
-          color: '#64748b',
-          fontSize: '16px',
-        }}>
-          {search || category !== 'Все' 
-            ? 'Ничего не найдено. Попробуйте изменить фильтры.' 
-            : 'Нет данных. Загрузите первый чек!'}
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b', fontSize: '16px' }}>
+          {search || category !== 'Все' ? 'Ничего не найдено. Попробуйте изменить фильтры.' : 'Нет данных. Загрузите первый чек!'}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
           {filteredProducts.map((product) => {
             const purchaseCount = allProducts.filter(p => p.ProductName === product.ProductName).length;
+            const isSelected = mainProduct?.ID === product.ID;
             return (
-              <div 
-                key={product.ID} 
+              <div key={product.ID} onClick={() => handleProductClick(product)}
                 style={{ 
-                  background: '#ffffff', 
+                  background: isSelected ? '#eef2ff' : '#ffffff', 
                   padding: '16px', 
                   borderRadius: '12px', 
-                  border: '1px solid #e2e8f0', 
-                  cursor: 'pointer',
+                  border: isSelected ? '2px solid #6366f1' : '1px solid #e2e8f0', 
+                  cursor: linkingMode ? 'pointer' : 'default',
                   transition: 'box-shadow 0.2s',
+                  position: 'relative',
                 }}
                 onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'}
                 onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
               >
-                <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>
+                {!linkingMode && (
+                  <button onClick={(e) => { e.stopPropagation(); startLinking(product); }}
+                    style={{ position: 'absolute', top: '8px', right: '8px', padding: '2px 8px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', color: '#64748b' }}>
+                    🔗
+                  </button>
+                )}
+                <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', paddingRight: '30px' }}>
                   {product.ProductName}
                 </div>
                 <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
                   {product.CategoryName || 'Без категории'}
                 </div>
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center', 
-                  marginTop: '12px' 
-                }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
                   <span style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>
                     {product.PricePerUnit?.toFixed(2)} ₽
                   </span>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"fmt"
 
 	"CheckAnalyze/database/sqlc"
 )
@@ -16,6 +17,8 @@ func (h *Handlers) GetListProducts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to list products: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	fmt.Printf("ListProductsWithDetails returned %d products\n", len(products))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(products)
@@ -102,7 +105,7 @@ func (h *Handlers) PostAddIdenticalProduct(w http.ResponseWriter, r *http.Reques
 
 	relation, err := h.DB.CreateProductRelation(ctx, sqlc.CreateProductRelationParams{
 		ProductID:          int32(productID),
-		IdenticalProductID: req.IdenticalProductID,
+		ID: req.IdenticalProductID,
 	})
 	if err != nil {
 		http.Error(w, "Failed to add identical product: "+err.Error(), http.StatusInternalServerError)

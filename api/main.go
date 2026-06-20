@@ -83,7 +83,7 @@ func main() {
 	mux.HandleFunc("GET /api/products", h.GetListProducts)
 	mux.HandleFunc("GET /api/products/{id}", h.GetProductById)
 	mux.HandleFunc("GET /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
-	mux.HandleFunc("POST /api/products/{id}/identical", h.GetIdenticalProductsByProductId)
+	mux.HandleFunc("POST /api/products/{id}/identical", h.PostAddIdenticalProduct)
 	mux.HandleFunc("GET /api/categories", h.GetListCategories)
 	mux.HandleFunc("GET /api/templates", h.GetListTemplates)
 	mux.HandleFunc("GET /api/templates/default", h.GetListDefaultTemplates)

@@ -36,6 +36,9 @@ SELECT
 FROM products p
 JOIN product_names pn ON p.product_id = pn.id
 JOIN checks c ON p.check_id = c.id
+WHERE pn.id NOT IN (
+    SELECT identical_product_id FROM product_relations
+)
 ORDER BY p.id;
 
 -- name: GetProductsByCheckID :many
