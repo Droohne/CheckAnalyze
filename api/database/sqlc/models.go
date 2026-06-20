@@ -37,9 +37,9 @@ type ProductName struct {
 }
 
 type ProductRelation struct {
-	ID                 int32
-	ProductID          int32
-	IdenticalProductID int32
+	ID                     int32
+	ProductNameID          int32
+	IdenticalProductNameID int32
 }
 
 type Shop struct {

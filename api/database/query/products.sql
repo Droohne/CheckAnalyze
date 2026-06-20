@@ -26,21 +26,6 @@ FROM products p
 JOIN product_names pn ON p.product_id = pn.id
 WHERE p.id = $1;
 
--- name: ListProductsWithDetails :many
-SELECT 
-    p.id,
-    p.price_per_unit,
-    p.amount_or_weight,
-    pn.name as product_name,
-    c.check_id as check_id
-FROM products p
-JOIN product_names pn ON p.product_id = pn.id
-JOIN checks c ON p.check_id = c.id
-WHERE pn.id NOT IN (
-    SELECT identical_product_id FROM product_relations
-)
-ORDER BY p.id;
-
 -- name: GetProductsByCheckID :many
 SELECT 
     p.id,
@@ -138,3 +123,18 @@ JOIN shops s ON c.shop_id = s.id
 JOIN shop_brands b ON s.brand_id = b.id
 ORDER BY c.created_at DESC
 LIMIT @limit_param::int;
+
+-- name: GetProductStats :many
+SELECT 
+    COALESCE(pr.product_name_id, pn.id) as canonical_name_id,
+    pn.name as product_name,
+    COUNT(p.id) as total_purchases,
+    SUM(p.amount_or_weight) as total_amount,
+    AVG(p.price_per_unit) as avg_price,
+    MIN(p.price_per_unit) as min_price,
+    MAX(p.price_per_unit) as max_price
+FROM product_names pn
+LEFT JOIN product_relations pr ON pn.id = pr.identical_product_name_id
+JOIN products p ON pn.id = p.product_id
+GROUP BY COALESCE(pr.product_name_id, pn.id), pn.name
+ORDER BY total_purchases DESC;

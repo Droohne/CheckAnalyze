@@ -7,120 +7,88 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createProductRelation = `-- name: CreateProductRelation :one
-WITH target_name AS (
-    SELECT pn.id as name_id
-    FROM products p
-    JOIN product_names pn ON p.product_id = pn.id
-    WHERE p.id = $2
-),
-inherited AS (
-    SELECT identical_product_id FROM product_relations WHERE product_id = $2
-),
-all_ids AS (
-    SELECT name_id as id FROM target_name
-    UNION ALL
-    SELECT identical_product_id FROM inherited
-),
-inserted AS (
-    INSERT INTO product_relations (product_id, identical_product_id) 
-    SELECT $1, id FROM all_ids
-    ON CONFLICT (product_id, identical_product_id) DO NOTHING 
-    RETURNING id, product_id, identical_product_id
-)
-SELECT id, product_id, identical_product_id FROM inserted
+INSERT INTO product_relations (product_name_id, identical_product_name_id) 
+VALUES ($1, $2)
+ON CONFLICT (product_name_id, identical_product_name_id) DO NOTHING 
+RETURNING id, product_name_id, identical_product_name_id
 `
 
 type CreateProductRelationParams struct {
-	ProductID int32
-	ID        int32
+	ProductNameID          int32
+	IdenticalProductNameID int32
 }
 
-type CreateProductRelationRow struct {
-	ID                 int32
-	ProductID          int32
-	IdenticalProductID int32
-}
-
-func (q *Queries) CreateProductRelation(ctx context.Context, arg CreateProductRelationParams) (CreateProductRelationRow, error) {
-	row := q.db.QueryRow(ctx, createProductRelation, arg.ProductID, arg.ID)
-	var i CreateProductRelationRow
-	err := row.Scan(&i.ID, &i.ProductID, &i.IdenticalProductID)
+func (q *Queries) CreateProductRelation(ctx context.Context, arg CreateProductRelationParams) (ProductRelation, error) {
+	row := q.db.QueryRow(ctx, createProductRelation, arg.ProductNameID, arg.IdenticalProductNameID)
+	var i ProductRelation
+	err := row.Scan(&i.ID, &i.ProductNameID, &i.IdenticalProductNameID)
 	return i, err
 }
 
 const deleteProductRelation = `-- name: DeleteProductRelation :exec
 DELETE FROM product_relations 
-WHERE product_id = $1 AND identical_product_id = $2
+WHERE product_name_id = $1 AND identical_product_name_id = $2
 `
 
 type DeleteProductRelationParams struct {
-	ProductID          int32
-	IdenticalProductID int32
+	ProductNameID          int32
+	IdenticalProductNameID int32
 }
 
 func (q *Queries) DeleteProductRelation(ctx context.Context, arg DeleteProductRelationParams) error {
-	_, err := q.db.Exec(ctx, deleteProductRelation, arg.ProductID, arg.IdenticalProductID)
+	_, err := q.db.Exec(ctx, deleteProductRelation, arg.ProductNameID, arg.IdenticalProductNameID)
 	return err
 }
 
-const getIdenticalProductsWithDetailsByProductId = `-- name: GetIdenticalProductsWithDetailsByProductId :many
+const getIdenticalProductsWithDetailsByProductNameId = `-- name: GetIdenticalProductsWithDetailsByProductNameId :many
 SELECT 
-    pr.product_id,
-    pr.identical_product_id,
+    pr.product_name_id,
+    pr.identical_product_name_id,
     pn1.name as product_name,
     pn2.name as identical_product_name,
-    p1.price_per_unit as product_price,
-    p2.price_per_unit as identical_price,
-    p1.amount_or_weight as product_amount,
-    p2.amount_or_weight as identical_amount,
-    c1.check_id as product_check_id,
-    c2.check_id as identical_check_id
+    p.price_per_unit,
+    p.amount_or_weight,
+    c.check_id
 FROM product_relations pr
-JOIN products p1 ON pr.product_id = p1.id
-JOIN products p2 ON pr.identical_product_id = p2.id
-JOIN product_names pn1 ON p1.product_id = pn1.id
-JOIN product_names pn2 ON p2.product_id = pn2.id
-JOIN checks c1 ON p1.check_id = c1.id
-JOIN checks c2 ON p2.check_id = c2.id
-WHERE pr.product_id = $1
+JOIN product_names pn1 ON pr.product_name_id = pn1.id
+JOIN product_names pn2 ON pr.identical_product_name_id = pn2.id
+LEFT JOIN products p ON pn1.id = p.product_id
+LEFT JOIN checks c ON p.check_id = c.id
+WHERE pr.product_name_id = $1
 `
 
-type GetIdenticalProductsWithDetailsByProductIdRow struct {
-	ProductID            int32
-	IdenticalProductID   int32
-	ProductName          string
-	IdenticalProductName string
-	ProductPrice         float64
-	IdenticalPrice       float64
-	ProductAmount        float64
-	IdenticalAmount      float64
-	ProductCheckID       string
-	IdenticalCheckID     string
+type GetIdenticalProductsWithDetailsByProductNameIdRow struct {
+	ProductNameID          int32
+	IdenticalProductNameID int32
+	ProductName            string
+	IdenticalProductName   string
+	PricePerUnit           pgtype.Float8
+	AmountOrWeight         pgtype.Float8
+	CheckID                pgtype.Text
 }
 
-func (q *Queries) GetIdenticalProductsWithDetailsByProductId(ctx context.Context, productID int32) ([]GetIdenticalProductsWithDetailsByProductIdRow, error) {
-	rows, err := q.db.Query(ctx, getIdenticalProductsWithDetailsByProductId, productID)
+func (q *Queries) GetIdenticalProductsWithDetailsByProductNameId(ctx context.Context, productNameID int32) ([]GetIdenticalProductsWithDetailsByProductNameIdRow, error) {
+	rows, err := q.db.Query(ctx, getIdenticalProductsWithDetailsByProductNameId, productNameID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetIdenticalProductsWithDetailsByProductIdRow
+	var items []GetIdenticalProductsWithDetailsByProductNameIdRow
 	for rows.Next() {
-		var i GetIdenticalProductsWithDetailsByProductIdRow
+		var i GetIdenticalProductsWithDetailsByProductNameIdRow
 		if err := rows.Scan(
-			&i.ProductID,
-			&i.IdenticalProductID,
+			&i.ProductNameID,
+			&i.IdenticalProductNameID,
 			&i.ProductName,
 			&i.IdenticalProductName,
-			&i.ProductPrice,
-			&i.IdenticalPrice,
-			&i.ProductAmount,
-			&i.IdenticalAmount,
-			&i.ProductCheckID,
-			&i.IdenticalCheckID,
+			&i.PricePerUnit,
+			&i.AmountOrWeight,
+			&i.CheckID,
 		); err != nil {
 			return nil, err
 		}
@@ -132,12 +100,12 @@ func (q *Queries) GetIdenticalProductsWithDetailsByProductId(ctx context.Context
 	return items, nil
 }
 
-const getProductRelationsByProductID = `-- name: GetProductRelationsByProductID :many
-SELECT id, product_id, identical_product_id FROM product_relations WHERE product_id = $1
+const getProductRelationsByProductNameID = `-- name: GetProductRelationsByProductNameID :many
+SELECT id, product_name_id, identical_product_name_id FROM product_relations WHERE product_name_id = $1
 `
 
-func (q *Queries) GetProductRelationsByProductID(ctx context.Context, productID int32) ([]ProductRelation, error) {
-	rows, err := q.db.Query(ctx, getProductRelationsByProductID, productID)
+func (q *Queries) GetProductRelationsByProductNameID(ctx context.Context, productNameID int32) ([]ProductRelation, error) {
+	rows, err := q.db.Query(ctx, getProductRelationsByProductNameID, productNameID)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +113,61 @@ func (q *Queries) GetProductRelationsByProductID(ctx context.Context, productID 
 	var items []ProductRelation
 	for rows.Next() {
 		var i ProductRelation
-		if err := rows.Scan(&i.ID, &i.ProductID, &i.IdenticalProductID); err != nil {
+		if err := rows.Scan(&i.ID, &i.ProductNameID, &i.IdenticalProductNameID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProductsWithDetails = `-- name: ListProductsWithDetails :many
+SELECT 
+    pn.id as product_name_id,
+    pn.name as product_name,
+    p.id,
+    p.price_per_unit,
+    p.amount_or_weight,
+    c.check_id as check_id
+FROM product_names pn
+LEFT JOIN products p ON pn.id = p.product_id
+LEFT JOIN checks c ON p.check_id = c.id
+WHERE pn.id NOT IN (
+    SELECT identical_product_name_id FROM product_relations
+)
+AND p.id IS NOT NULL
+ORDER BY pn.name
+`
+
+type ListProductsWithDetailsRow struct {
+	ProductNameID  int32
+	ProductName    string
+	ID             pgtype.Int4
+	PricePerUnit   pgtype.Float8
+	AmountOrWeight pgtype.Float8
+	CheckID        pgtype.Text
+}
+
+func (q *Queries) ListProductsWithDetails(ctx context.Context) ([]ListProductsWithDetailsRow, error) {
+	rows, err := q.db.Query(ctx, listProductsWithDetails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProductsWithDetailsRow
+	for rows.Next() {
+		var i ListProductsWithDetailsRow
+		if err := rows.Scan(
+			&i.ProductNameID,
+			&i.ProductName,
+			&i.ID,
+			&i.PricePerUnit,
+			&i.AmountOrWeight,
+			&i.CheckID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

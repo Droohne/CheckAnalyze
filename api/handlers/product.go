@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
-	"fmt"
 
 	"CheckAnalyze/database/sqlc"
 )
@@ -64,7 +64,7 @@ func (h *Handlers) GetIdenticalProductsByProductId(w http.ResponseWriter, r *htt
 		return
 	}
 
-	products, err := h.DB.GetIdenticalProductsWithDetailsByProductId(ctx, int32(id))
+	products, err := h.DB.GetIdenticalProductsWithDetailsByProductNameId(ctx, int32(id))
 	if err != nil {
 		http.Error(w, "Failed to get identical products: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -83,14 +83,14 @@ func (h *Handlers) PostAddIdenticalProduct(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	productID, err := strconv.Atoi(idStr)
+	productNameID, err := strconv.Atoi(idStr)
 	if err != nil {
 		http.Error(w, "invalid product id", http.StatusBadRequest)
 		return
 	}
 
 	var req struct {
-		IdenticalProductID int32 `json:"identical_product_id"`
+		IdenticalProductNameID int32 `json:"identical_product_name_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -98,16 +98,17 @@ func (h *Handlers) PostAddIdenticalProduct(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if req.IdenticalProductID == 0 {
-		http.Error(w, "identical_product_id required", http.StatusBadRequest)
+	if req.IdenticalProductNameID == 0 {
+		http.Error(w, "identical_product_name_id required", http.StatusBadRequest)
 		return
 	}
 
 	relation, err := h.DB.CreateProductRelation(ctx, sqlc.CreateProductRelationParams{
-		ProductID:          int32(productID),
-		ID: req.IdenticalProductID,
+		ProductNameID:          int32(productNameID),
+		IdenticalProductNameID: req.IdenticalProductNameID,
 	})
 	if err != nil {
+		fmt.Printf("CreateProductRelation error: %v (productNameID=%d, identicalNameID=%d)\n", err, productNameID, req.IdenticalProductNameID)
 		http.Error(w, "Failed to add identical product: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

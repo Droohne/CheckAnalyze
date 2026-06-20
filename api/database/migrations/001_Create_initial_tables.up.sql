@@ -62,10 +62,10 @@ CREATE TABLE IF NOT EXISTS products (
 -- Create product_relations table (self-referencing many-to-many for identical products)
 CREATE TABLE IF NOT EXISTS product_relations (
     id SERIAL PRIMARY KEY,
-    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    identical_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    UNIQUE(product_id, identical_product_id),
-    CHECK (product_id != identical_product_id)
+    product_name_id INTEGER NOT NULL REFERENCES product_names(id) ON DELETE CASCADE,
+    identical_product_name_id INTEGER NOT NULL REFERENCES product_names(id) ON DELETE CASCADE,
+    UNIQUE(product_name_id, identical_product_name_id),
+    CHECK (product_name_id != identical_product_name_id)
 );
 
 -- Create templates table
@@ -90,8 +90,8 @@ CREATE TABLE IF NOT EXISTS template_products (
 -- Add indexes for better performance
 CREATE INDEX idx_products_product_id ON products(product_id);
 CREATE INDEX idx_products_check_id ON products(check_id);
-CREATE INDEX idx_product_relations_product_id ON product_relations(product_id);
-CREATE INDEX idx_product_relations_identical_product_id ON product_relations(identical_product_id);
+CREATE INDEX idx_product_relations_product_name_id ON product_relations(product_name_id);
+CREATE INDEX idx_product_relations_identical_product_name_id ON product_relations(identical_product_name_id);
 CREATE INDEX idx_checks_check_id ON checks(check_id);
 CREATE INDEX idx_product_names_name ON product_names(name);
 CREATE INDEX idx_categories_name ON categories(name);

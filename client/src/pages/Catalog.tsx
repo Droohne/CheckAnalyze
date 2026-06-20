@@ -4,6 +4,7 @@ import { getProducts, addIdenticalProduct } from '../api/client';
 
 interface Product {
   ID: number;
+  ProductNameID: number;  
   ProductName: string;
   PricePerUnit: number;
   AmountOrWeight: number;
@@ -86,9 +87,8 @@ function Catalog() {
   console.log('filteredProducts count:', filteredProducts.length);
 
   const handleProductClick = (product: Product) => {
-    console.log('Product clicked:', product.ID, product.ProductName, 'linkingMode:', linkingMode, 'mainProduct:', mainProduct?.ID);
-    if (linkingMode && mainProduct && product.ID !== mainProduct.ID) {
-      linkMutation.mutate({ id: mainProduct.ID, identicalId: product.ID });
+    if (linkingMode && mainProduct && product.ProductNameID !== mainProduct.ProductNameID) {
+      linkMutation.mutate({ id: mainProduct.ProductNameID, identicalId: product.ProductNameID });
     }
   };
 

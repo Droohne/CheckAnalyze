@@ -48,8 +48,9 @@ export const getProducts = () => api.get('/products');
 export const getProduct = (id: number) => api.get(`/products/${id}`);
 export const getIdenticalProducts = (id: number) =>
   api.get(`/products/${id}/identical`);
-export const addIdenticalProduct = (id: number, identicalProductId: number) =>
-  api.post(`/products/${id}/identical`, { identical_product_id: identicalProductId });
+
+export const addIdenticalProduct = (id: number, identicalProductNameId: number) =>
+  api.post(`/products/${id}/identical`, { identical_product_name_id: identicalProductNameId });
 
 // Categories
 export const getCategories = () => api.get('/categories');
