@@ -1,26 +1,87 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getProducts } from '../api/client';
+
+interface Product {
+  ID: number;
+  ProductName: string;
+  PricePerUnit: number;
+  AmountOrWeight: number;
+  CheckID: string;
+  CreatedAt: string;
+  CategoryName?: string;
+}
 
 function Catalog() {
   const [viewMode, setViewMode] = useState<'personal' | 'global'>('personal');
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('Все');
+  const [sortBy, setSortBy] = useState('popularity');
 
-  const products = [
-    { id: 1, name: 'Хлеб белый', category: 'Бакалея', popularity: 89, price: 89.99 },
-    { id: 2, name: 'Молоко 3.2%', category: 'Молочные', popularity: 67, price: 79.50 },
-    { id: 3, name: 'Яйца куриные', category: 'Молочные', popularity: 54, price: 129.00 },
-    { id: 4, name: 'Сахар песок', category: 'Бакалея', popularity: 48, price: 59.90 },
-    { id: 5, name: 'Масло подсолнечное', category: 'Бакалея', popularity: 41, price: 149.00 },
-    { id: 6, name: 'Гречка', category: 'Бакалея', popularity: 29, price: 89.99 },
-    { id: 7, name: 'Курица', category: 'Мясо', popularity: 76, price: 249.00 },
-    { id: 8, name: 'Сыр твердый', category: 'Молочные', popularity: 35, price: 189.00 },
-  ];
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => getProducts().then(r => r.data),
+  });
 
-  const categories = ['Все', 'Бакалея', 'Молочные', 'Мясо', 'Овощи', 'Фрукты'];
+  const allProducts: Product[] = Array.isArray(data) ? data : [];
+
+  // Deduplicate by ProductName, keep latest entry (highest ID or most recent)
+  const products = Object.values(
+    allProducts.reduce((acc: Record<string, Product>, product) => {
+      const existing = acc[product.ProductName];
+      if (!existing || product.ID > existing.ID) {
+        acc[product.ProductName] = product;
+      }
+      return acc;
+    }, {})
+  );
+
+  const categories: string[] = ['Все', ...new Set(products.map((p) => p.CategoryName || 'Без категории'))];
+
+  const filteredProducts = products
+    .filter((p) => {
+      if (!p.ProductName) return false;
+      const matchesSearch = p.ProductName.toLowerCase().includes(search.toLowerCase());
+      const matchesCategory = category === 'Все' || p.CategoryName === category;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'price_asc':
+          return a.PricePerUnit - b.PricePerUnit;
+        case 'price_desc':
+          return b.PricePerUnit - a.PricePerUnit;
+        case 'name':
+          return a.ProductName.localeCompare(b.ProductName);
+        case 'popularity':
+        default:
+          const countA = allProducts.filter(p => p.ProductName === a.ProductName).length;
+          const countB = allProducts.filter(p => p.ProductName === b.ProductName).length;
+          return countB - countA;
+      }
+    });
+
+  if (isLoading) {
+    return (
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#64748b' }}>Загрузка...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px', textAlign: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#ef4444' }}>Ошибка загрузки данных</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px' }}>
       
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: '700', margin: '0' }}>📦 Catalog</h1>
+        <h1 style={{ fontSize: '28px', fontWeight: '700', margin: '0' }}>📦 Каталог</h1>
         <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
           <button
             onClick={() => setViewMode('personal')}
@@ -57,37 +118,111 @@ function Catalog() {
         </div>
       </div>
       <p style={{ color: '#64748b', margin: '0 0 32px 0', fontSize: '16px' }}>
-        {viewMode === 'personal' ? 'Ваши продукты' : 'Все продукты из базы'}
+        {viewMode === 'personal' ? 'Ваши продукты' : 'Все продукты из базы'} • {filteredProducts.length} уникальных
       </p>
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <input 
           type="text" 
           placeholder="Поиск продуктов..." 
-          style={{ flex: 1, minWidth: '200px', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px' }}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ 
+            flex: 1, 
+            minWidth: '200px', 
+            padding: '10px 16px', 
+            borderRadius: '8px', 
+            border: '1px solid #e2e8f0', 
+            fontSize: '14px',
+            outline: 'none',
+          }}
         />
-        <select style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: '#ffffff' }}>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+        <select 
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          style={{ 
+            padding: '10px 16px', 
+            borderRadius: '8px', 
+            border: '1px solid #e2e8f0', 
+            fontSize: '14px', 
+            background: '#ffffff',
+            cursor: 'pointer',
+          }}
+        >
+          {categories.map((c: string) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px', background: '#ffffff' }}>
-          <option>По популярности</option>
-          <option>Цена: по возрастанию</option>
-          <option>Цена: по убыванию</option>
+        <select 
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          style={{ 
+            padding: '10px 16px', 
+            borderRadius: '8px', 
+            border: '1px solid #e2e8f0', 
+            fontSize: '14px', 
+            background: '#ffffff',
+            cursor: 'pointer',
+          }}
+        >
+          <option value="popularity">По популярности</option>
+          <option value="price_asc">Цена: по возрастанию</option>
+          <option value="price_desc">Цена: по убыванию</option>
+          <option value="name">По названию</option>
         </select>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-        {products.map(product => (
-          <div key={product.id} style={{ background: '#ffffff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
-            <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>{product.name}</div>
-            <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>{product.category}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
-              <span style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>{product.price} ₽</span>
-              <span style={{ fontSize: '13px', color: '#64748b' }}>🔥 {product.popularity}</span>
-            </div>
-          </div>
-        ))}
-      </div>
+      {filteredProducts.length === 0 ? (
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '60px 20px', 
+          color: '#64748b',
+          fontSize: '16px',
+        }}>
+          {search || category !== 'Все' 
+            ? 'Ничего не найдено. Попробуйте изменить фильтры.' 
+            : 'Нет данных. Загрузите первый чек!'}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+          {filteredProducts.map((product) => {
+            const purchaseCount = allProducts.filter(p => p.ProductName === product.ProductName).length;
+            return (
+              <div 
+                key={product.ID} 
+                style={{ 
+                  background: '#ffffff', 
+                  padding: '16px', 
+                  borderRadius: '12px', 
+                  border: '1px solid #e2e8f0', 
+                  cursor: 'pointer',
+                  transition: 'box-shadow 0.2s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+              >
+                <div style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a' }}>
+                  {product.ProductName}
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
+                  {product.CategoryName || 'Без категории'}
+                </div>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  marginTop: '12px' 
+                }}>
+                  <span style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>
+                    {product.PricePerUnit?.toFixed(2)} ₽
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#64748b' }}>
+                    🛒 {purchaseCount}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

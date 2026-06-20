@@ -150,17 +150,16 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 		if quantity == 0 {
 			quantity = 1.0
 		}
-
-		category, err := h.DB.GetCategoryByProductNameOrCreateUndefined(ctx, item.Name)
+		normalizedName := parser.NormalizeProductName(item.Name)
+		category, err := h.DB.GetCategoryByProductNameOrCreateUndefined(ctx, normalizedName)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to get category for '%s': %v\n", item.Name, err)
+			fmt.Printf("ERROR: Failed to get category for '%s': %v\n", normalizedName, err)
 			writeJSONError(w, "Failed to get category", http.StatusInternalServerError)
 			return
 		}
-
-		product, err := h.DB.GetOrCreateProductName(ctx, item.Name)
+		product, err := h.DB.GetOrCreateProductName(ctx, normalizedName)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to get/create product '%s': %v\n", item.Name, err)
+			fmt.Printf("ERROR: Failed to get/create product '%s': %v\n", normalizedName, err)
 			writeJSONError(w, "Failed to get/create product", http.StatusInternalServerError)
 			return
 		}
@@ -173,7 +172,7 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 			AmountOrWeight: quantity,
 		})
 		if err != nil {
-			fmt.Printf("ERROR: Failed to save product '%s': %v\n", item.Name, err)
+			fmt.Printf("ERROR: Failed to save product '%s': %v\n", normalizedName, err)
 			writeJSONError(w, "Failed to save product", http.StatusInternalServerError)
 			return
 		}
