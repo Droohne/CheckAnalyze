@@ -7,7 +7,7 @@ SET amount_or_weight = products.amount_or_weight + EXCLUDED.amount_or_weight,
     price_per_unit = EXCLUDED.price_per_unit
 RETURNING *;
 
--- name: GetProductByID :one`
+-- name: GetProductByID :one
 SELECT * FROM products WHERE id = $1;
 
 -- name: ListProductsByCheckID :many

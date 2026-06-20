@@ -58,10 +58,16 @@ export const getCategories = () => api.get('/categories');
 export const getTemplates = () => api.get('/templates');
 export const getDefaultTemplates = () => api.get('/templates/default');
 export const getUserTemplates = () => api.get('/templates/user');
-export const createTemplate = (data: { name: string; products: number[] }) =>
-  api.post('/templates', data);
-export const updateTemplate = (id: number, data: { name: string; products: number[] }) =>
-  api.put(`/templates/${id}`, data);
+// Templates - update these
+export const createTemplate = (data: { 
+  name: string; 
+  products: { product_name_id: number; amount_or_weight: number }[] 
+}) => api.post('/templates', data);
+
+export const updateTemplate = (id: number, data: { 
+  name: string; 
+  products: { product_name_id: number; amount_or_weight: number }[] 
+}) => api.put(`/templates/${id}`, data);
 export const deleteTemplate = (id: number) => api.delete(`/templates/${id}`);
 export const copyTemplate = (id: number, name: string) =>
   api.post(`/templates/${id}/copy`, { name });

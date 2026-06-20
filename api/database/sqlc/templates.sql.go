@@ -12,52 +12,45 @@ import (
 )
 
 const addProductToTemplate = `-- name: AddProductToTemplate :exec
-INSERT INTO template_products (template_id, product_name_id) 
-VALUES ($1::int, $2::int) 
-ON CONFLICT (template_id, product_name_id) DO NOTHING
+INSERT INTO template_products (template_id, product_name_id, amount_or_weight) 
+VALUES ($1::int, $2::int, $3::float8) 
+ON CONFLICT (template_id, product_name_id) DO UPDATE 
+SET amount_or_weight = EXCLUDED.amount_or_weight
 `
 
 type AddProductToTemplateParams struct {
-	TemplateID    int32
-	ProductNameID int32
+	TemplateID     int32
+	ProductNameID  int32
+	AmountOrWeight float64
 }
 
 func (q *Queries) AddProductToTemplate(ctx context.Context, arg AddProductToTemplateParams) error {
-	_, err := q.db.Exec(ctx, addProductToTemplate, arg.TemplateID, arg.ProductNameID)
-	return err
-}
-
-const clearTemplateProducts = `-- name: ClearTemplateProducts :exec
-DELETE FROM template_products WHERE template_id = $1::int
-`
-
-func (q *Queries) ClearTemplateProducts(ctx context.Context, templateID int32) error {
-	_, err := q.db.Exec(ctx, clearTemplateProducts, templateID)
+	_, err := q.db.Exec(ctx, addProductToTemplate, arg.TemplateID, arg.ProductNameID, arg.AmountOrWeight)
 	return err
 }
 
 const copyTemplate = `-- name: CopyTemplate :one
 WITH new_template AS (
     INSERT INTO templates (name, user_id, is_default) 
-    VALUES ($2::text, $3::int, FALSE) 
-    RETURNING id, name, user_id, is_default, created_at
+    VALUES ($1::text, $2::int, FALSE) 
+    RETURNING id
+), copied_products AS (
+    INSERT INTO template_products (template_id, product_name_id, amount_or_weight)
+    SELECT (SELECT id FROM new_template), tp.product_name_id, tp.amount_or_weight
+    FROM template_products tp
+    WHERE tp.template_id = $3::int
 )
-INSERT INTO template_products (template_id, product_name_id)
-SELECT new_template.id, tp.product_name_id
-FROM new_template
-CROSS JOIN template_products tp
-WHERE tp.template_id = $1::int
-RETURNING (SELECT id, name, user_id, is_default, created_at FROM new_template)
+SELECT id FROM new_template
 `
 
 type CopyTemplateParams struct {
-	TemplateID int32
 	Name       string
 	UserID     int32
+	TemplateID int32
 }
 
 func (q *Queries) CopyTemplate(ctx context.Context, arg CopyTemplateParams) (int32, error) {
-	row := q.db.QueryRow(ctx, copyTemplate, arg.TemplateID, arg.Name, arg.UserID)
+	row := q.db.QueryRow(ctx, copyTemplate, arg.Name, arg.UserID, arg.TemplateID)
 	var id int32
 	err := row.Scan(&id)
 	return id, err
@@ -121,6 +114,8 @@ SELECT
     t.user_id,
     t.is_default,
     t.created_at,
+    tp.id as tp_id,
+    tp.amount_or_weight,
     pn.id as product_id,
     pn.name as product_name
 FROM templates t
@@ -131,13 +126,15 @@ ORDER BY pn.name
 `
 
 type GetTemplateWithProductsRow struct {
-	ID          int32
-	Name        string
-	UserID      pgtype.Int4
-	IsDefault   pgtype.Bool
-	CreatedAt   pgtype.Timestamp
-	ProductID   pgtype.Int4
-	ProductName pgtype.Text
+	ID             int32
+	Name           string
+	UserID         pgtype.Int4
+	IsDefault      pgtype.Bool
+	CreatedAt      pgtype.Timestamp
+	TpID           pgtype.Int4
+	AmountOrWeight pgtype.Float8
+	ProductID      pgtype.Int4
+	ProductName    pgtype.Text
 }
 
 func (q *Queries) GetTemplateWithProducts(ctx context.Context, id int32) ([]GetTemplateWithProductsRow, error) {
@@ -155,6 +152,8 @@ func (q *Queries) GetTemplateWithProducts(ctx context.Context, id int32) ([]GetT
 			&i.UserID,
 			&i.IsDefault,
 			&i.CreatedAt,
+			&i.TpID,
+			&i.AmountOrWeight,
 			&i.ProductID,
 			&i.ProductName,
 		); err != nil {
@@ -169,24 +168,54 @@ func (q *Queries) GetTemplateWithProducts(ctx context.Context, id int32) ([]GetT
 }
 
 const listDefaultTemplates = `-- name: ListDefaultTemplates :many
-SELECT id, name, user_id, is_default, created_at FROM templates WHERE is_default = TRUE ORDER BY name
+SELECT 
+    t.id,
+    t.name,
+    t.user_id,
+    t.is_default,
+    t.created_at,
+    tp.id as tp_id,
+    tp.amount_or_weight,
+    pn.id as product_id,
+    pn.name as product_name
+FROM templates t
+LEFT JOIN template_products tp ON t.id = tp.template_id
+LEFT JOIN product_names pn ON tp.product_name_id = pn.id
+WHERE t.is_default = TRUE
+ORDER BY t.name, pn.name
 `
 
-func (q *Queries) ListDefaultTemplates(ctx context.Context) ([]Template, error) {
+type ListDefaultTemplatesRow struct {
+	ID             int32
+	Name           string
+	UserID         pgtype.Int4
+	IsDefault      pgtype.Bool
+	CreatedAt      pgtype.Timestamp
+	TpID           pgtype.Int4
+	AmountOrWeight pgtype.Float8
+	ProductID      pgtype.Int4
+	ProductName    pgtype.Text
+}
+
+func (q *Queries) ListDefaultTemplates(ctx context.Context) ([]ListDefaultTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listDefaultTemplates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Template
+	var items []ListDefaultTemplatesRow
 	for rows.Next() {
-		var i Template
+		var i ListDefaultTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.UserID,
 			&i.IsDefault,
 			&i.CreatedAt,
+			&i.TpID,
+			&i.AmountOrWeight,
+			&i.ProductID,
+			&i.ProductName,
 		); err != nil {
 			return nil, err
 		}
@@ -199,23 +228,35 @@ func (q *Queries) ListDefaultTemplates(ctx context.Context) ([]Template, error) 
 }
 
 const listTemplateProducts = `-- name: ListTemplateProducts :many
-SELECT pn.id, pn.name
+SELECT tp.id, tp.product_name_id, tp.amount_or_weight, pn.name as product_name
 FROM template_products tp
 JOIN product_names pn ON tp.product_name_id = pn.id
 WHERE tp.template_id = $1::int
 ORDER BY pn.name
 `
 
-func (q *Queries) ListTemplateProducts(ctx context.Context, templateID int32) ([]ProductName, error) {
+type ListTemplateProductsRow struct {
+	ID             int32
+	ProductNameID  int32
+	AmountOrWeight float64
+	ProductName    string
+}
+
+func (q *Queries) ListTemplateProducts(ctx context.Context, templateID int32) ([]ListTemplateProductsRow, error) {
 	rows, err := q.db.Query(ctx, listTemplateProducts, templateID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ProductName
+	var items []ListTemplateProductsRow
 	for rows.Next() {
-		var i ProductName
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		var i ListTemplateProductsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProductNameID,
+			&i.AmountOrWeight,
+			&i.ProductName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -259,24 +300,54 @@ func (q *Queries) ListTemplates(ctx context.Context) ([]Template, error) {
 }
 
 const listUserTemplates = `-- name: ListUserTemplates :many
-SELECT id, name, user_id, is_default, created_at FROM templates WHERE user_id = $1::int ORDER BY name
+SELECT 
+    t.id,
+    t.name,
+    t.user_id,
+    t.is_default,
+    t.created_at,
+    tp.id as tp_id,
+    tp.amount_or_weight,
+    pn.id as product_id,
+    pn.name as product_name
+FROM templates t
+LEFT JOIN template_products tp ON t.id = tp.template_id
+LEFT JOIN product_names pn ON tp.product_name_id = pn.id
+WHERE t.user_id = $1::int
+ORDER BY t.name, pn.name
 `
 
-func (q *Queries) ListUserTemplates(ctx context.Context, userID int32) ([]Template, error) {
+type ListUserTemplatesRow struct {
+	ID             int32
+	Name           string
+	UserID         pgtype.Int4
+	IsDefault      pgtype.Bool
+	CreatedAt      pgtype.Timestamp
+	TpID           pgtype.Int4
+	AmountOrWeight pgtype.Float8
+	ProductID      pgtype.Int4
+	ProductName    pgtype.Text
+}
+
+func (q *Queries) ListUserTemplates(ctx context.Context, userID int32) ([]ListUserTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listUserTemplates, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Template
+	var items []ListUserTemplatesRow
 	for rows.Next() {
-		var i Template
+		var i ListUserTemplatesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.UserID,
 			&i.IsDefault,
 			&i.CreatedAt,
+			&i.TpID,
+			&i.AmountOrWeight,
+			&i.ProductID,
+			&i.ProductName,
 		); err != nil {
 			return nil, err
 		}
@@ -286,6 +357,15 @@ func (q *Queries) ListUserTemplates(ctx context.Context, userID int32) ([]Templa
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeAllProductsFromTemplate = `-- name: RemoveAllProductsFromTemplate :exec
+DELETE FROM template_products WHERE template_id = $1::int
+`
+
+func (q *Queries) RemoveAllProductsFromTemplate(ctx context.Context, templateID int32) error {
+	_, err := q.db.Exec(ctx, removeAllProductsFromTemplate, templateID)
+	return err
 }
 
 const removeProductFromTemplate = `-- name: RemoveProductFromTemplate :exec

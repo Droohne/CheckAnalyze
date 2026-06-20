@@ -24,30 +24,109 @@ func (h *Handlers) GetListTemplates(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetListDefaultTemplates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	templates, err := h.DB.ListDefaultTemplates(ctx)
+	rows, err := h.DB.ListDefaultTemplates(ctx)
 	if err != nil {
 		http.Error(w, "Failed to list default templates: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	result := groupTemplateRows(rows)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(templates)
+	json.NewEncoder(w).Encode(result)
 }
 
 func (h *Handlers) GetListUserTemplates(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// TODO: Get user_id from auth context
-	var userID int32 = 1 // temporary
+	var userID int32 = 1
 
-	templates, err := h.DB.ListUserTemplates(ctx, userID)
+	rows, err := h.DB.ListUserTemplates(ctx, userID)
 	if err != nil {
 		http.Error(w, "Failed to list user templates: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	result := groupTemplateRows(rows)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(templates)
+	json.NewEncoder(w).Encode(result)
+}
+
+func groupTemplateRows(rows interface{}) interface{} {
+	type Product struct {
+		ID             int32   `json:"id"`
+		ProductNameID  int32   `json:"product_name_id"`
+		ProductName    string  `json:"product_name"`
+		AmountOrWeight float64 `json:"amount_or_weight"`
+	}
+	type Template struct {
+		ID        int32     `json:"id"`
+		Name      string    `json:"name"`
+		UserID    int32     `json:"user_id"`
+		IsDefault bool      `json:"is_default"`
+		CreatedAt string    `json:"created_at"`
+		Products  []Product `json:"products"`
+	}
+	templateMap := make(map[int32]*Template)
+	var order []int32
+
+	switch r := rows.(type) {
+	case []sqlc.ListDefaultTemplatesRow:
+		for _, row := range r {
+			t, ok := templateMap[row.ID]
+			if !ok {
+				t = &Template{
+					ID:        row.ID,
+					Name:      row.Name,
+					UserID:    row.UserID.Int32,
+					IsDefault: row.IsDefault.Bool,
+					CreatedAt: row.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+					Products:  []Product{},
+				}
+				templateMap[row.ID] = t
+				order = append(order, row.ID)
+			}
+			if row.ProductID.Valid {
+				t.Products = append(t.Products, Product{
+					ID:             row.TpID.Int32,
+					ProductNameID:  row.ProductID.Int32,
+					ProductName:    row.ProductName.String,
+					AmountOrWeight: row.AmountOrWeight.Float64,
+				})
+			}
+		}
+	case []sqlc.ListUserTemplatesRow:
+		for _, row := range r {
+			t, ok := templateMap[row.ID]
+			if !ok {
+				t = &Template{
+					ID:        row.ID,
+					Name:      row.Name,
+					UserID:    row.UserID.Int32,
+					IsDefault: row.IsDefault.Bool,
+					CreatedAt: row.CreatedAt.Time.Format("2006-01-02T15:04:05Z"),
+					Products:  []Product{},
+				}
+				templateMap[row.ID] = t
+				order = append(order, row.ID)
+			}
+			if row.ProductID.Valid {
+				t.Products = append(t.Products, Product{
+					ID:             row.TpID.Int32,
+					ProductNameID:  row.ProductID.Int32,
+					ProductName:    row.ProductName.String,
+					AmountOrWeight: row.AmountOrWeight.Float64,
+				})
+			}
+		}
+	}
+
+	result := make([]Template, len(order))
+	for i, id := range order {
+		result[i] = *templateMap[id]
+	}
+	return result
 }
 
 func (h *Handlers) GetTemplateById(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +160,10 @@ func (h *Handlers) PostCreateTemplate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name      string `json:"name"`
 		IsDefault bool   `json:"is_default"`
+		Products  []struct {
+			ProductNameID  int32   `json:"product_name_id"`
+			AmountOrWeight float64 `json:"amount_or_weight"`
+		} `json:"products"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -93,8 +176,7 @@ func (h *Handlers) PostCreateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get user_id from auth context
-	var userID int32 = 1 // temporary
+	var userID int32 = 1
 
 	template, err := h.DB.CreateTemplate(ctx, sqlc.CreateTemplateParams{
 		Name:      req.Name,
@@ -104,6 +186,18 @@ func (h *Handlers) PostCreateTemplate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to create template: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	for _, p := range req.Products {
+		amount := p.AmountOrWeight
+		if amount == 0 {
+			amount = 1.0
+		}
+		h.DB.AddProductToTemplate(ctx, sqlc.AddProductToTemplateParams{
+			TemplateID:     template.ID,
+			ProductNameID:  p.ProductNameID,
+			AmountOrWeight: amount,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -129,6 +223,10 @@ func (h *Handlers) PutUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name      string `json:"name"`
 		IsDefault bool   `json:"is_default"`
+		Products  []struct {
+			ProductNameID  int32   `json:"product_name_id"`
+			AmountOrWeight float64 `json:"amount_or_weight"`
+		} `json:"products"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -141,8 +239,7 @@ func (h *Handlers) PutUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Get user_id from auth context
-	var userID int32 = 1 // temporary
+	var userID int32 = 1
 
 	template, err := h.DB.UpdateTemplate(ctx, sqlc.UpdateTemplateParams{
 		ID:        int32(id),
@@ -153,6 +250,19 @@ func (h *Handlers) PutUpdateTemplate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to update template: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	h.DB.RemoveAllProductsFromTemplate(ctx, int32(id))
+	for _, p := range req.Products {
+		amount := p.AmountOrWeight
+		if amount == 0 {
+			amount = 1.0
+		}
+		h.DB.AddProductToTemplate(ctx, sqlc.AddProductToTemplateParams{
+			TemplateID:     int32(id),
+			ProductNameID:  p.ProductNameID,
+			AmountOrWeight: amount,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -211,8 +321,7 @@ func (h *Handlers) PostCopyTemplateById(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO: Get user_id from auth context
-	var userID int32 = 1 // temporary
+	var userID int32 = 1
 
 	newTemplateID, err := h.DB.CopyTemplate(ctx, sqlc.CopyTemplateParams{
 		Name:       req.Name,
@@ -276,7 +385,8 @@ func (h *Handlers) PostAddProductToTemplate(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req struct {
-		ProductNameID int32 `json:"product_name_id"`
+		ProductNameID  int32   `json:"product_name_id"`
+		AmountOrWeight float64 `json:"amount_or_weight"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -289,9 +399,14 @@ func (h *Handlers) PostAddProductToTemplate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if req.AmountOrWeight == 0 {
+		req.AmountOrWeight = 1.0
+	}
+
 	err = h.DB.AddProductToTemplate(ctx, sqlc.AddProductToTemplateParams{
-		TemplateID:    int32(id),
-		ProductNameID: req.ProductNameID,
+		TemplateID:     int32(id),
+		ProductNameID:  req.ProductNameID,
+		AmountOrWeight: req.AmountOrWeight,
 	})
 	if err != nil {
 		http.Error(w, "Failed to add product to template: "+err.Error(), http.StatusInternalServerError)

@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS template_products (
     id SERIAL PRIMARY KEY,
     template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
     product_name_id INTEGER NOT NULL REFERENCES product_names(id) ON DELETE CASCADE,
+    amount_or_weight DOUBLE PRECISION NOT NULL,
     UNIQUE(template_id, product_name_id)
 );
 

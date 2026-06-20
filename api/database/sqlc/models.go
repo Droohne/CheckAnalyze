@@ -64,9 +64,10 @@ type Template struct {
 }
 
 type TemplateProduct struct {
-	ID            int32
-	TemplateID    int32
-	ProductNameID int32
+	ID             int32
+	TemplateID     int32
+	ProductNameID  int32
+	AmountOrWeight float64
 }
 
 type User struct {
