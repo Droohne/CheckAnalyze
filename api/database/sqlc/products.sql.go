@@ -158,6 +158,67 @@ func (q *Queries) GetProductPriceHistory(ctx context.Context, productID int32) (
 	return items, nil
 }
 
+const getProductStats = `-- name: GetProductStats :many
+WITH canonical AS (
+    SELECT 
+        COALESCE(pr.product_name_id, pn.id) as canonical_id,
+        pn.id as name_id
+    FROM product_names pn
+    LEFT JOIN product_relations pr ON pn.id = pr.identical_product_name_id
+)
+SELECT 
+    c.canonical_id,
+    pn_main.name as product_name,
+    COUNT(p.id) as total_purchases,
+    SUM(p.amount_or_weight) as total_amount,
+    AVG(p.price_per_unit) as avg_price,
+    MIN(p.price_per_unit) as min_price,
+    MAX(p.price_per_unit) as max_price
+FROM canonical c
+JOIN product_names pn_main ON c.canonical_id = pn_main.id
+JOIN products p ON c.name_id = p.product_id
+GROUP BY c.canonical_id, pn_main.name
+ORDER BY total_purchases DESC
+`
+
+type GetProductStatsRow struct {
+	CanonicalID    int32
+	ProductName    string
+	TotalPurchases int64
+	TotalAmount    int64
+	AvgPrice       float64
+	MinPrice       interface{}
+	MaxPrice       interface{}
+}
+
+func (q *Queries) GetProductStats(ctx context.Context) ([]GetProductStatsRow, error) {
+	rows, err := q.db.Query(ctx, getProductStats)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetProductStatsRow
+	for rows.Next() {
+		var i GetProductStatsRow
+		if err := rows.Scan(
+			&i.CanonicalID,
+			&i.ProductName,
+			&i.TotalPurchases,
+			&i.TotalAmount,
+			&i.AvgPrice,
+			&i.MinPrice,
+			&i.MaxPrice,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProductWithDetails = `-- name: GetProductWithDetails :one
 SELECT 
     p.id,

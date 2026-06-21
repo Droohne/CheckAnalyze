@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { getStats, getProducts, getCategories } from '../api/client';
 
-const COLORS = ['#f43f5e', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899'];
+const PIE_COLORS = ['#f43f5e', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#6366f1', '#e2e8f0'];
 
 function Settings() {
   const [viewMode, setViewMode] = useState<'personal' | 'global'>('global');
@@ -20,8 +20,47 @@ function Settings() {
 
   const cat = Array.isArray(categories) ? categories.map((c: any) => {
     const count = p.filter((item: any) => item.CategoryName === c.Name).length;
-    return { name: c.Name, product_count: count || 1 };
-  }) : [];
+    return { name: c.Name, product_count: count };
+  }).filter((c: any) => c.product_count > 0)
+    .sort((a: any, b: any) => b.product_count - a.product_count) : [];
+
+  const top7 = cat.slice(0, 7);
+  const otherCount = cat.slice(7).reduce((sum: number, c: any) => sum + c.product_count, 0);
+  const otherItems = cat.slice(7);
+
+  const pieData = otherCount > 0 
+    ? [...top7, { name: 'Другое', product_count: otherCount, items: otherItems }]
+    : top7;
+
+  const totalCount = pieData.reduce((sum: number, d: any) => sum + d.product_count, 0);
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      const percent = ((data.product_count / totalCount) * 100).toFixed(0);
+      if (data.name === 'Другое' && data.items) {
+        return (
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px' }}>Другое ({percent}%)</div>
+            {data.items.map((item: any) => {
+              const itemPercent = ((item.product_count / totalCount) * 100).toFixed(0);
+              return (
+                <div key={item.name} style={{ fontSize: 12, color: '#64748b' }}>
+                  {item.name}: {itemPercent}%
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+      return (
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}>
+          {data.name}: {percent}%
+        </div>
+      );
+    }
+    return null;
+  };
 
   const productCounts: Record<string, number> = {};
   p.forEach((item: any) => {
@@ -100,12 +139,35 @@ function Settings() {
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', minHeight: '350px' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px' }}>Категории</div>
           <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie data={cat} dataKey="product_count" nameKey="name" cx="50%" cy="50%" outerRadius={80} startAngle={90} endAngle={-270} stroke="none" innerRadius={cat.length === 1 ? 0 : 0} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`} labelLine={false}>
-                {cat.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }} />
-            </PieChart>
+<PieChart>
+  <Pie 
+    data={pieData} 
+    dataKey="product_count" 
+    nameKey="name" 
+    cx="50%" 
+    cy="50%" 
+    outerRadius={80} 
+    startAngle={90} 
+    endAngle={-270} 
+    stroke="none" 
+    label={({ cx, cy, midAngle, outerRadius, percent, name }) => {
+      const RADIAN = Math.PI / 180;
+      const radius = (outerRadius ?? 0) + 5;
+      const x = cx + radius * Math.cos(-(midAngle ?? 0) * RADIAN);
+      const y = cy + radius * Math.sin(-(midAngle ?? 0) * RADIAN);
+      const index = pieData.findIndex((d: any) => d.name === name);
+      return (
+        <text x={x} y={y} fill={PIE_COLORS[index % PIE_COLORS.length]} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={14}>
+          {name} {((percent ?? 0) * 100).toFixed(0)}%
+        </text>
+      );
+    }}
+    labelLine={false}
+  >
+    {pieData.map((_: any, i: number) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+  </Pie>
+  <Tooltip content={<CustomTooltip />} />
+</PieChart>
           </ResponsiveContainer>
         </div>
       </div>

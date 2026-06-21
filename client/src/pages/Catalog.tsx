@@ -8,6 +8,7 @@ interface Product {
   ProductName: string;
   PricePerUnit: number;
   AmountOrWeight: number;
+  TotalPurchases: number;
   CheckID: string;
   CreatedAt: string;
   CategoryName?: string;
@@ -78,9 +79,7 @@ function Catalog() {
         case 'name': return a.ProductName.localeCompare(b.ProductName);
         case 'popularity':
         default:
-          const countA = allProducts.filter(p => p.ProductName === a.ProductName).length;
-          const countB = allProducts.filter(p => p.ProductName === b.ProductName).length;
-          return countB - countA;
+          return (b.TotalPurchases || 0) - (a.TotalPurchases || 0);
       }
     });
 
@@ -188,7 +187,7 @@ function Catalog() {
                     {product.PricePerUnit?.toFixed(2)} ₽
                   </span>
                   <span style={{ fontSize: '13px', color: '#64748b' }}>
-                    🛒 {purchaseCount}
+                    🛒 {product.TotalPurchases || 0}
                   </span>
                 </div>
               </div>

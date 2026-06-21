@@ -1,15 +1,15 @@
 package handlers
 
 import (
+	"CheckAnalyze/config"
+	"CheckAnalyze/database/sqlc"
+	"CheckAnalyze/parser"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-
-	"CheckAnalyze/database/sqlc"
-	"CheckAnalyze/parser"
 )
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {
@@ -150,13 +150,21 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 		if quantity == 0 {
 			quantity = 1.0
 		}
+
 		normalizedName := parser.NormalizeProductName(item.Name)
-		category, err := h.DB.GetCategoryByProductNameOrCreateUndefined(ctx, normalizedName)
+
+		// Auto-categorize product
+		categoryName := config.CategorizeProduct(normalizedName)
+		category, err := h.DB.GetCategoryByName(ctx, categoryName)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to get category for '%s': %v\n", normalizedName, err)
-			writeJSONError(w, "Failed to get category", http.StatusInternalServerError)
-			return
+			category, err = h.DB.CreateCategory(ctx, categoryName)
+			if err != nil {
+				fmt.Printf("ERROR: Failed to create category '%s': %v\n", categoryName, err)
+				writeJSONError(w, "Failed to create category", http.StatusInternalServerError)
+				return
+			}
 		}
+
 		product, err := h.DB.GetOrCreateProductName(ctx, normalizedName)
 		if err != nil {
 			fmt.Printf("ERROR: Failed to get/create product '%s': %v\n", normalizedName, err)

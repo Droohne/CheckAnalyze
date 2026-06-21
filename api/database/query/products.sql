@@ -125,16 +125,23 @@ ORDER BY c.created_at DESC
 LIMIT @limit_param::int;
 
 -- name: GetProductStats :many
+WITH canonical AS (
+    SELECT 
+        COALESCE(pr.product_name_id, pn.id) as canonical_id,
+        pn.id as name_id
+    FROM product_names pn
+    LEFT JOIN product_relations pr ON pn.id = pr.identical_product_name_id
+)
 SELECT 
-    COALESCE(pr.product_name_id, pn.id) as canonical_name_id,
-    pn.name as product_name,
+    c.canonical_id,
+    pn_main.name as product_name,
     COUNT(p.id) as total_purchases,
     SUM(p.amount_or_weight) as total_amount,
     AVG(p.price_per_unit) as avg_price,
     MIN(p.price_per_unit) as min_price,
     MAX(p.price_per_unit) as max_price
-FROM product_names pn
-LEFT JOIN product_relations pr ON pn.id = pr.identical_product_name_id
-JOIN products p ON pn.id = p.product_id
-GROUP BY COALESCE(pr.product_name_id, pn.id), pn.name
+FROM canonical c
+JOIN product_names pn_main ON c.canonical_id = pn_main.id
+JOIN products p ON c.name_id = p.product_id
+GROUP BY c.canonical_id, pn_main.name
 ORDER BY total_purchases DESC;

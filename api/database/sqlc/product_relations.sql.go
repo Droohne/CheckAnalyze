@@ -125,30 +125,48 @@ func (q *Queries) GetProductRelationsByProductNameID(ctx context.Context, produc
 }
 
 const listProductsWithDetails = `-- name: ListProductsWithDetails :many
+WITH canonical AS (
+    SELECT 
+        COALESCE(pr.product_name_id, pn.id) as canonical_id,
+        pn.id as name_id
+    FROM product_names pn
+    LEFT JOIN product_relations pr ON pn.id = pr.identical_product_name_id
+),
+counts AS (
+    SELECT canonical_id, COUNT(*) as total_purchases
+    FROM canonical c
+    JOIN products p ON c.name_id = p.product_id
+    GROUP BY canonical_id
+)
 SELECT 
-    pn.id as product_name_id,
-    pn.name as product_name,
     p.id,
+    pn.id as product_name_id,
     p.price_per_unit,
     p.amount_or_weight,
-    c.check_id as check_id
-FROM product_names pn
-LEFT JOIN products p ON pn.id = p.product_id
-LEFT JOIN checks c ON p.check_id = c.id
+    pn.name as product_name,
+    c.check_id as check_id,
+    cat.name as category_name,
+    COALESCE(cnt.total_purchases, 0) as total_purchases
+FROM products p
+JOIN product_names pn ON p.product_id = pn.id
+JOIN checks c ON p.check_id = c.id
+JOIN categories cat ON p.category_id = cat.id
+LEFT JOIN counts cnt ON pn.id = cnt.canonical_id
 WHERE pn.id NOT IN (
     SELECT identical_product_name_id FROM product_relations
 )
-AND p.id IS NOT NULL
-ORDER BY pn.name
+ORDER BY p.id
 `
 
 type ListProductsWithDetailsRow struct {
+	ID             int32
 	ProductNameID  int32
+	PricePerUnit   float64
+	AmountOrWeight float64
 	ProductName    string
-	ID             pgtype.Int4
-	PricePerUnit   pgtype.Float8
-	AmountOrWeight pgtype.Float8
-	CheckID        pgtype.Text
+	CheckID        string
+	CategoryName   string
+	TotalPurchases int64
 }
 
 func (q *Queries) ListProductsWithDetails(ctx context.Context) ([]ListProductsWithDetailsRow, error) {
@@ -161,12 +179,14 @@ func (q *Queries) ListProductsWithDetails(ctx context.Context) ([]ListProductsWi
 	for rows.Next() {
 		var i ListProductsWithDetailsRow
 		if err := rows.Scan(
-			&i.ProductNameID,
-			&i.ProductName,
 			&i.ID,
+			&i.ProductNameID,
 			&i.PricePerUnit,
 			&i.AmountOrWeight,
+			&i.ProductName,
 			&i.CheckID,
+			&i.CategoryName,
+			&i.TotalPurchases,
 		); err != nil {
 			return nil, err
 		}
