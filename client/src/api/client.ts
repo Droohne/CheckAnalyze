@@ -86,3 +86,6 @@ export const uploadCheck = (file: File) => {
 
 export const getLiveFeed = (limit?: number) =>
   api.get('/feed', { params: { limit } });
+
+export const getProductPriceHistory = (id: number) =>
+  api.get(`/products/${id}/history`);

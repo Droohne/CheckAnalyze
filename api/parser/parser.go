@@ -39,17 +39,24 @@ func ParseCheckJSON(filename string) (*models.ParsedCheck, error) {
 		address = "Unknown"
 	}
 
+	dateTime := checkItem.Ticket.Document.Receipt.DateTime
+	if dateTime == "" {
+		dateTime = checkItem.CreatedAt.Format("2006-01-02T15:04:05")
+	}
+
 	items := checkItem.Ticket.Document.Receipt.Items
 
 	fmt.Printf("📄 Check ID: %s\n", checkItem.ID)
 	fmt.Printf("👤 User: %s\n", user)
 	fmt.Printf("📍 Address: %s\n", address)
+	fmt.Printf("📅 DateTime: %s\n", dateTime)
 	fmt.Printf("📦 Items: %d\n", len(items))
 
 	return &models.ParsedCheck{
 		CheckID:      checkItem.ID,
 		ShopFullname: user,
 		Address:      address,
+		DateTime:     dateTime,
 		Items:        items,
 	}, nil
 }

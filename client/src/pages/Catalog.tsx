@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProducts, addIdenticalProduct } from '../api/client';
+import { getProducts, getProduct, getIdenticalProducts, addIdenticalProduct, getProductPriceHistory } from '../api/client';
 
 interface Product {
   ID: number;
@@ -14,6 +14,17 @@ interface Product {
   CategoryName?: string;
 }
 
+interface PriceHistory {
+  ID: number;
+  PricePerUnit: number;
+  AmountOrWeight: number;
+  ProductName: string;
+  CheckID: string;
+  CreatedAt: string;
+  BrandName?: string;
+  ShopAddress?: string;
+}
+
 function Catalog() {
   const [viewMode, setViewMode] = useState<'personal' | 'global'>('personal');
   const [search, setSearch] = useState('');
@@ -21,6 +32,7 @@ function Catalog() {
   const [sortBy, setSortBy] = useState('popularity');
   const [mainProduct, setMainProduct] = useState<Product | null>(null);
   const [linkingMode, setLinkingMode] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -28,28 +40,31 @@ function Catalog() {
     queryFn: () => getProducts().then(r => r.data),
   });
 
-  console.log('allProducts count:', Array.isArray(data) ? data.length : 0);
+  // Fetch product details when selected
+  const { data: productHistory } = useQuery({
+    queryKey: ['productHistory', selectedProduct?.ProductNameID],
+    queryFn: () => getProductPriceHistory(selectedProduct!.ProductNameID).then(r => r.data),
+    enabled: !!selectedProduct,
+  });
+
+  const { data: identicalProducts } = useQuery({
+    queryKey: ['identicalProducts', selectedProduct?.ProductNameID],
+    queryFn: () => getIdenticalProducts(selectedProduct!.ProductNameID).then(r => r.data),
+    enabled: !!selectedProduct,
+  });
 
   const linkMutation = useMutation({
-    mutationFn: ({ id, identicalId }: { id: number; identicalId: number }) => {
-      console.log('Linking:', id, '->', identicalId);
-      return addIdenticalProduct(id, identicalId);
-    },
-    onSuccess: (data) => {
-      console.log('Link success, response:', data);
-      console.log('Products before invalidate:', Array.isArray(data) ? data.length : 'N/A');
+    mutationFn: ({ id, identicalId }: { id: number; identicalId: number }) =>
+      addIdenticalProduct(id, identicalId),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setMainProduct(null);
       setLinkingMode(false);
     },
-    onError: (error) => {
-      console.error('Link mutation error:', error);
-    },
   });
 
   const allProducts: Product[] = Array.isArray(data) ? data : [];
-
-  console.log('allProducts sample (first 3):', allProducts.slice(0, 3).map(p => ({ ID: p.ID, ProductName: p.ProductName })));
+  
 
   const products = Object.values(
     allProducts.reduce((acc: Record<string, Product>, product) => {
@@ -60,8 +75,6 @@ function Catalog() {
       return acc;
     }, {})
   );
-
-  console.log('deduplicated products count:', products.length);
 
   const categories: string[] = ['Все', ...new Set(products.map((p) => p.CategoryName || 'Без категории'))];
 
@@ -83,16 +96,15 @@ function Catalog() {
       }
     });
 
-  console.log('filteredProducts count:', filteredProducts.length);
-
   const handleProductClick = (product: Product) => {
     if (linkingMode && mainProduct && product.ProductNameID !== mainProduct.ProductNameID) {
       linkMutation.mutate({ id: mainProduct.ProductNameID, identicalId: product.ProductNameID });
+    } else if (!linkingMode) {
+      setSelectedProduct(product);
     }
   };
 
   const startLinking = (product: Product) => {
-    console.log('Start linking product:', product.ID, product.ProductName);
     setMainProduct(product);
     setLinkingMode(true);
   };
@@ -117,6 +129,100 @@ function Catalog() {
             style={{ padding: '6px 16px', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}>
             Отмена
           </button>
+        </div>
+      )}
+
+      {/* Product Detail Modal */}
+      {selectedProduct && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}
+          onClick={() => setSelectedProduct(null)}>
+          <div style={{ background: '#ffffff', padding: '32px', borderRadius: '16px', maxWidth: '700px', width: '100%', maxHeight: '80vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '22px', fontWeight: '700', margin: '0 0 4px 0' }}>{selectedProduct.ProductName}</h2>
+                <div style={{ color: '#64748b', fontSize: '14px' }}>
+                  {selectedProduct.CategoryName || 'Без категории'} • Куплено {selectedProduct.TotalPurchases || 0} раз
+                </div>
+              </div>
+              <button onClick={() => setSelectedProduct(null)}
+                style={{ padding: '4px 12px', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+            </div>
+
+            {/* Latest Price */}
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '20px', textAlign: 'center' }}>
+              <div style={{ fontSize: '13px', color: '#64748b' }}>Последняя цена</div>
+              <div style={{ fontSize: '32px', fontWeight: '700', color: '#0f172a' }}>
+                {Array.isArray(productHistory) && productHistory.length > 0
+                  ? `${productHistory[0].PricePerUnit?.toFixed(2)} ₽`
+                  : `${selectedProduct.PricePerUnit?.toFixed(2)} ₽`}
+              </div>
+            </div>
+
+            {/* Identical Products */}
+            {identicalProducts && identicalProducts.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>🔗 Идентичные продукты</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {identicalProducts.map((ip: any) => (
+                    <span key={ip.IdenticalProductNameID} style={{
+                      background: '#eef2ff', padding: '4px 12px', borderRadius: '12px', fontSize: '13px', color: '#6366f1'
+                    }}>{ip.IdenticalProductName || ip.identical_product_name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Price History */}
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>📊 История цен</div>
+{productHistory ? (
+  <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+    {(() => {
+      console.log('productHistory raw:', productHistory);
+      const grouped = (Array.isArray(productHistory) ? productHistory : []).reduce((acc: Record<string, any[]>, entry: any) => {
+        const key = entry.BrandName || 'Неизвестный магазин';
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(entry);
+        return acc;
+      }, {});
+      console.log('grouped:', grouped);
+      return Object.entries(grouped).map(([brand, entries]) => (
+        <div key={brand} style={{ marginBottom: '16px' }}>
+          <div style={{ fontWeight: '600', fontSize: '14px', color: '#0f172a', marginBottom: '4px' }}>🏪 {brand}</div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                <th style={{ padding: '6px 8px', color: '#64748b' }}>Дата</th>
+                <th style={{ padding: '6px 8px', color: '#64748b' }}>Цена</th>
+                <th style={{ padding: '6px 8px', color: '#64748b' }}>Кол-во</th>
+                <th style={{ padding: '6px 8px', color: '#64748b' }}>Адрес</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry: any, i: number) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '6px 8px' }}>
+                    {entry.CreatedAt 
+                      ? new Date(entry.CreatedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                      : '-'}
+                  </td>
+                  <td style={{ padding: '6px 8px', fontWeight: '600' }}>{entry.PricePerUnit?.toFixed(2)} ₽</td>
+                  <td style={{ padding: '6px 8px' }}>{entry.AmountOrWeight}</td>
+                  <td style={{ padding: '6px 8px', color: '#64748b', fontSize: '12px', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.ShopAddress || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ));
+    })()}
+  </div>
+) : (
+  <div style={{ color: '#64748b', fontSize: '14px' }}>Загрузка...</div>
+)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -154,7 +260,6 @@ function Catalog() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
           {filteredProducts.map((product) => {
-            const purchaseCount = allProducts.filter(p => p.ProductName === product.ProductName).length;
             const isSelected = mainProduct?.ID === product.ID;
             return (
               <div key={product.ID} onClick={() => handleProductClick(product)}
@@ -163,7 +268,7 @@ function Catalog() {
                   padding: '16px', 
                   borderRadius: '12px', 
                   border: isSelected ? '2px solid #6366f1' : '1px solid #e2e8f0', 
-                  cursor: linkingMode ? 'pointer' : 'default',
+                  cursor: 'pointer',
                   transition: 'box-shadow 0.2s',
                   position: 'relative',
                 }}

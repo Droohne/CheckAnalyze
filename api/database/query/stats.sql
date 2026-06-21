@@ -15,3 +15,4 @@ FROM categories cat
 LEFT JOIN products p ON cat.id = p.category_id
 WHERE cat.id = $1
 GROUP BY cat.id, cat.name;
+

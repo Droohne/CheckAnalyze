@@ -65,7 +65,7 @@ func (q *Queries) CompareShopsByTemplate(ctx context.Context, dollar_1 []string)
 const createShop = `-- name: CreateShop :one
 INSERT INTO shops (brand_id, address) 
 VALUES ($1, $2) 
-ON CONFLICT (address) DO NOTHING 
+ON CONFLICT (brand_id, address) DO NOTHING 
 RETURNING id, brand_id, address, lat, lng
 `
 

@@ -25,8 +25,8 @@ ORDER BY s.address;
 -- name: CreateShop :one
 INSERT INTO shops (brand_id, address) 
 VALUES ($1, $2) 
-ON CONFLICT (address) DO NOTHING 
-RETURNING id, brand_id, address, lat, lng;
+ON CONFLICT (brand_id, address) DO NOTHING 
+RETURNING *;
 
 -- name: UpdateShop :one
 UPDATE shops 

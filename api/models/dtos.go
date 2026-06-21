@@ -20,6 +20,7 @@ type Receipt struct {
 	ShopFullname       string `json:"user"`
 	RetailPlaceAddress string `json:"retailPlaceAddress"`
 	Items              []Item `json:"items"`
+	DateTime           string `json:"dateTime"`
 }
 
 type Item struct {
@@ -31,8 +32,9 @@ type Item struct {
 type ParsedCheck struct {
 	CheckID      string
 	ShopFullname string
-	Items        []Item
 	Address      string
+	DateTime     string
+	Items        []Item
 }
 
 type DBStats struct {

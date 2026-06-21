@@ -10,6 +10,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func writeJSONError(w http.ResponseWriter, message string, status int) {
@@ -22,6 +27,30 @@ func writeJSONSuccess(w http.ResponseWriter, data map[string]string, status int)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func NormalizeAddress(addr string) string {
+	n := strings.TrimSpace(addr)
+
+	if idx := strings.Index(n, "Пермь"); idx != -1 {
+		n = n[idx:]
+	} else if idx := strings.Index(n, "Пермский"); idx != -1 {
+		n = n[idx:]
+	}
+
+	n = regexp.MustCompile(`г\.\s*о\.?\s*`).ReplaceAllString(n, "")
+	n = regexp.MustCompile(`^(город|г\.|г)\s*`).ReplaceAllString(n, "")
+
+	n = regexp.MustCompile(`\.(\p{L})`).ReplaceAllString(n, ". $1")
+	n = regexp.MustCompile(`\s+`).ReplaceAllString(n, " ")
+	n = regexp.MustCompile(`,+`).ReplaceAllString(n, ",")
+	n = regexp.MustCompile(`\s*,\s*`).ReplaceAllString(n, ", ")
+
+	// Normalize "дом", "д.", "здание" → "д."
+	n = regexp.MustCompile(`(?i)(дом|здание)\s*№?\s*`).ReplaceAllString(n, "д. ")
+
+	n = strings.Trim(n, " ,")
+	return n
 }
 
 func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +134,7 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 2: Find or create shop with brand link
+	parsedCheck.Address = NormalizeAddress(parsedCheck.Address)
 	shop, err := h.DB.GetShopByAddress(ctx, parsedCheck.Address)
 	if err != nil {
 		fmt.Printf("Shop at address '%s' not found, creating with brand_id=%d... (error: %v)\n",
@@ -130,18 +160,25 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 3: Create the check
+	parsedTime, err := time.Parse("2006-01-02T15:04:05", parsedCheck.DateTime)
+	if err != nil {
+		fmt.Printf("WARNING: Failed to parse date '%s': %v, using current time\n", parsedCheck.DateTime, err)
+		parsedTime = time.Now()
+	}
+
 	dbCheck, err := h.DB.GetOrCreateCheck(ctx, sqlc.GetOrCreateCheckParams{
-		CheckID:  parsedCheck.CheckID,
-		ShopID:   shop.ID,
-		UserID:   userID,
-		FileName: header.Filename,
+		CheckID:   parsedCheck.CheckID,
+		ShopID:    shop.ID,
+		UserID:    userID,
+		FileName:  header.Filename,
+		CreatedAt: pgtype.Timestamp{Time: parsedTime, Valid: true},
 	})
 	if err != nil {
 		fmt.Printf("ERROR: Failed to create check: %v\n", err)
 		writeJSONError(w, "Failed to create check", http.StatusInternalServerError)
 		return
 	}
-	fmt.Printf("Check created: ID=%d, CheckID=%s\n", dbCheck.ID, dbCheck.CheckID)
+	fmt.Printf("Check created: ID=%d, CheckID=%s, Date=%s\n", dbCheck.ID, dbCheck.CheckID, parsedTime.Format("2006-01-02"))
 
 	// Step 4: Process items
 	for _, item := range parsedCheck.Items {

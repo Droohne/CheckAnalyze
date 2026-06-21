@@ -123,8 +123,8 @@ func (q *Queries) GetChecksByDateRange(ctx context.Context, arg GetChecksByDateR
 
 const getOrCreateCheck = `-- name: GetOrCreateCheck :one
 WITH inserted AS (
-    INSERT INTO checks (check_id, shop_id, user_id, file_name) 
-    VALUES ($1, $2, $3, $4) 
+    INSERT INTO checks (check_id, shop_id, user_id, file_name, created_at) 
+    VALUES ($1, $2, $3, $4, $5) 
     ON CONFLICT (check_id) DO NOTHING 
     RETURNING id, check_id, shop_id, user_id, file_name, created_at
 )
@@ -135,10 +135,11 @@ LIMIT 1
 `
 
 type GetOrCreateCheckParams struct {
-	CheckID  string
-	ShopID   int32
-	UserID   int32
-	FileName string
+	CheckID   string
+	ShopID    int32
+	UserID    int32
+	FileName  string
+	CreatedAt pgtype.Timestamp
 }
 
 type GetOrCreateCheckRow struct {
@@ -156,6 +157,7 @@ func (q *Queries) GetOrCreateCheck(ctx context.Context, arg GetOrCreateCheckPara
 		arg.ShopID,
 		arg.UserID,
 		arg.FileName,
+		arg.CreatedAt,
 	)
 	var i GetOrCreateCheckRow
 	err := row.Scan(

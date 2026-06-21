@@ -19,9 +19,10 @@ CREATE TABLE IF NOT EXISTS shop_brands (
 CREATE TABLE IF NOT EXISTS shops (
     id SERIAL PRIMARY KEY,
     brand_id INTEGER NOT NULL,
-    address text UNIQUE NOT NULL,
+    address text NOT NULL,
     lat DOUBLE PRECISION,
-    lng DOUBLE PRECISION
+    lng DOUBLE PRECISION,
+    UNIQUE(brand_id, address)
 );
 
 -- Create checks table

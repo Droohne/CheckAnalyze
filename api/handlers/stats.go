@@ -16,7 +16,7 @@ func (h *Handlers) GetStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	// Вот это возвращает ответ на запрос. 
+	// Вот это возвращает ответ на запрос.
 	json.NewEncoder(w).Encode(stats)
 }
 
@@ -43,4 +43,20 @@ func (h *Handlers) GetCategoryStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *Handlers) GetProductPriceHistory(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	idStr := r.PathValue("id")
+	id, _ := strconv.Atoi(idStr)
+
+	history, err := h.DB.GetProductPriceHistory(ctx, int32(id))
+	if err != nil {
+		http.Error(w, "Failed to get price history: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
 }

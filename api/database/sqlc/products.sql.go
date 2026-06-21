@@ -119,11 +119,23 @@ SELECT
     c.created_at,
     p.price_per_unit,
     p.amount_or_weight,
-    c.check_id
+    c.check_id,
+    pn.name as product_name,
+    b.name as brand_name,
+    s.address as shop_address
 FROM products p
 JOIN checks c ON p.check_id = c.id
+JOIN product_names pn ON p.product_id = pn.id
+JOIN shops s ON c.shop_id = s.id
+JOIN shop_brands b ON s.brand_id = b.id
 WHERE p.product_id = $1
-ORDER BY c.created_at DESC
+   OR p.product_id IN (
+       SELECT identical_product_name_id FROM product_relations WHERE product_name_id = $1
+   )
+   OR p.product_id IN (
+       SELECT product_name_id FROM product_relations WHERE identical_product_name_id = $1
+   )
+ORDER BY b.name, s.address, c.created_at DESC
 `
 
 type GetProductPriceHistoryRow struct {
@@ -131,6 +143,9 @@ type GetProductPriceHistoryRow struct {
 	PricePerUnit   float64
 	AmountOrWeight float64
 	CheckID        string
+	ProductName    string
+	BrandName      string
+	ShopAddress    string
 }
 
 func (q *Queries) GetProductPriceHistory(ctx context.Context, productID int32) ([]GetProductPriceHistoryRow, error) {
@@ -147,6 +162,9 @@ func (q *Queries) GetProductPriceHistory(ctx context.Context, productID int32) (
 			&i.PricePerUnit,
 			&i.AmountOrWeight,
 			&i.CheckID,
+			&i.ProductName,
+			&i.BrandName,
+			&i.ShopAddress,
 		); err != nil {
 			return nil, err
 		}
