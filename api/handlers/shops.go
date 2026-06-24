@@ -53,67 +53,27 @@ func (h *Handlers) GetNearbyShopsByAddress(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(shops)
 }
 
-// TODO: Сравнивать по имени продукта на не по этомук нейровысеру?
 func (h *Handlers) PostCompareShopsOnTemplate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var req struct {
 		Products []string `json:"products"`
 	}
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-
 	if len(req.Products) == 0 {
 		http.Error(w, "products required", http.StatusBadRequest)
 		return
 	}
 
-	shops, err := h.DB.CompareShopsByTemplate(ctx, req.Products)
+	rows, err := h.DB.CompareShopsByTemplateWithBreakdown(ctx, req.Products)
 	if err != nil {
 		http.Error(w, "Failed to compare shops: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(shops)
-}
-
-func (h *Handlers) GetShopBreakdown(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	idStr := r.PathValue("id")
-	if idStr == "" {
-		http.Error(w, "shop id required", http.StatusBadRequest)
-		return
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		http.Error(w, "invalid shop id", http.StatusBadRequest)
-		return
-	}
-
-	var req struct {
-		Products []string `json:"products"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	breakdown, err := h.DB.GetShopBreakdown(ctx, sqlc.GetShopBreakdownParams{
-		ShopID:   int32(id),
-		Products: req.Products,
-	})
-	if err != nil {
-		http.Error(w, "Failed to get breakdown: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(breakdown)
+	json.NewEncoder(w).Encode(rows)
 }

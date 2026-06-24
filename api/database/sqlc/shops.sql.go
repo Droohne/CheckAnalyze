@@ -11,46 +11,88 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const compareShopsByTemplate = `-- name: CompareShopsByTemplate :many
+const compareShopsByTemplateWithBreakdown = `-- name: CompareShopsByTemplateWithBreakdown :many
+WITH matching_products AS (
+    SELECT pn2.id, req.name as requested_name
+    FROM product_names pn2
+    CROSS JOIN unnest($1::text[]) req(name)
+    WHERE pn2.name = req.name
+    UNION
+    SELECT pr.identical_product_name_id, req.name
+    FROM product_relations pr
+    CROSS JOIN unnest($1::text[]) req(name)
+    JOIN product_names pn_req ON pn_req.name = req.name
+    WHERE pr.product_name_id = pn_req.id
+    UNION
+    SELECT pr.product_name_id, req.name
+    FROM product_relations pr
+    CROSS JOIN unnest($1::text[]) req(name)
+    JOIN product_names pn_req ON pn_req.name = req.name
+    WHERE pr.identical_product_name_id = pn_req.id
+),
+all_template_products AS (
+    SELECT DISTINCT mp.requested_name
+    FROM matching_products mp
+),
+shop_products AS (
+    SELECT DISTINCT ON (mp.requested_name, c.shop_id)
+        c.shop_id,
+        mp.requested_name,
+        pn.name as product_name,
+        p.price_per_unit,
+        p.amount_or_weight,
+        (p.price_per_unit * p.amount_or_weight)::float8 as item_total
+    FROM checks c
+    JOIN products p ON c.id = p.check_id
+    JOIN product_names pn ON p.product_id = pn.id
+    JOIN matching_products mp ON pn.id = mp.id
+    ORDER BY mp.requested_name, c.shop_id, c.created_at DESC
+)
 SELECT 
     s.id,
     b.name as brand_name,
     s.address,
-    SUM(p.price_per_unit * p.amount_or_weight)::float8 as total_price,
-    COUNT(p.id) as product_count
+    atp.requested_name,
+    COALESCE(sp.product_name, atp.requested_name) as product_name,
+    sp.price_per_unit,
+    sp.amount_or_weight,
+    sp.item_total
 FROM shops s
 JOIN shop_brands b ON s.brand_id = b.id
-JOIN checks c ON s.id = c.shop_id
-JOIN products p ON c.id = p.check_id
-JOIN product_names pn ON p.product_id = pn.id
-WHERE pn.name = ANY($1::text[])
-GROUP BY s.id, b.name, s.address
-ORDER BY total_price ASC
+CROSS JOIN all_template_products atp
+LEFT JOIN shop_products sp ON s.id = sp.shop_id AND atp.requested_name = sp.requested_name
+ORDER BY s.id, atp.requested_name
 `
 
-type CompareShopsByTemplateRow struct {
-	ID           int32
-	BrandName    string
-	Address      string
-	TotalPrice   float64
-	ProductCount int64
+type CompareShopsByTemplateWithBreakdownRow struct {
+	ID             int32
+	BrandName      string
+	Address        string
+	RequestedName  interface{}
+	ProductName    string
+	PricePerUnit   pgtype.Float8
+	AmountOrWeight pgtype.Float8
+	ItemTotal      pgtype.Float8
 }
 
-func (q *Queries) CompareShopsByTemplate(ctx context.Context, dollar_1 []string) ([]CompareShopsByTemplateRow, error) {
-	rows, err := q.db.Query(ctx, compareShopsByTemplate, dollar_1)
+func (q *Queries) CompareShopsByTemplateWithBreakdown(ctx context.Context, dollar_1 []string) ([]CompareShopsByTemplateWithBreakdownRow, error) {
+	rows, err := q.db.Query(ctx, compareShopsByTemplateWithBreakdown, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CompareShopsByTemplateRow
+	var items []CompareShopsByTemplateWithBreakdownRow
 	for rows.Next() {
-		var i CompareShopsByTemplateRow
+		var i CompareShopsByTemplateWithBreakdownRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.BrandName,
 			&i.Address,
-			&i.TotalPrice,
-			&i.ProductCount,
+			&i.RequestedName,
+			&i.ProductName,
+			&i.PricePerUnit,
+			&i.AmountOrWeight,
+			&i.ItemTotal,
 		); err != nil {
 			return nil, err
 		}
@@ -94,89 +136,6 @@ DELETE FROM shops WHERE id = $1
 func (q *Queries) DeleteShop(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, deleteShop, id)
 	return err
-}
-
-const getShopBreakdown = `-- name: GetShopBreakdown :many
-WITH matching_products AS (
-    SELECT pn2.id, req.name as requested_name
-    FROM product_names pn2
-    CROSS JOIN unnest($1::text[]) req(name)
-    WHERE pn2.name = req.name
-    UNION
-    SELECT pr.identical_product_name_id, req.name
-    FROM product_relations pr
-    CROSS JOIN unnest($1::text[]) req(name)
-    JOIN product_names pn_req ON pn_req.name = req.name
-    WHERE pr.product_name_id = pn_req.id
-    UNION
-    SELECT pr.product_name_id, req.name
-    FROM product_relations pr
-    CROSS JOIN unnest($1::text[]) req(name)
-    JOIN product_names pn_req ON pn_req.name = req.name
-    WHERE pr.identical_product_name_id = pn_req.id
-),
-latest_checks AS (
-    SELECT DISTINCT ON (p.product_id) 
-        p.product_id,
-        p.price_per_unit,
-        p.amount_or_weight,
-        pn.name as product_name,
-        mp.requested_name
-    FROM shops s
-    JOIN checks c ON s.id = c.shop_id
-    JOIN products p ON c.id = p.check_id
-    JOIN product_names pn ON p.product_id = pn.id
-    JOIN matching_products mp ON pn.id = mp.id
-    WHERE s.id = $2::int
-    ORDER BY p.product_id, c.created_at DESC
-)
-SELECT 
-    l.product_name,
-    l.price_per_unit,
-    l.amount_or_weight,
-    (l.price_per_unit * l.amount_or_weight)::float8 as total_price,
-    l.requested_name::text as matched_template_name
-FROM latest_checks l
-ORDER BY l.product_name
-`
-
-type GetShopBreakdownParams struct {
-	Products []string
-	ShopID   int32
-}
-
-type GetShopBreakdownRow struct {
-	ProductName         string
-	PricePerUnit        float64
-	AmountOrWeight      float64
-	TotalPrice          float64
-	MatchedTemplateName string
-}
-
-func (q *Queries) GetShopBreakdown(ctx context.Context, arg GetShopBreakdownParams) ([]GetShopBreakdownRow, error) {
-	rows, err := q.db.Query(ctx, getShopBreakdown, arg.Products, arg.ShopID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetShopBreakdownRow
-	for rows.Next() {
-		var i GetShopBreakdownRow
-		if err := rows.Scan(
-			&i.ProductName,
-			&i.PricePerUnit,
-			&i.AmountOrWeight,
-			&i.TotalPrice,
-			&i.MatchedTemplateName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getShopByAddress = `-- name: GetShopByAddress :one
@@ -224,58 +183,6 @@ func (q *Queries) GetShopByID(ctx context.Context, id int32) (GetShopByIDRow, er
 		&i.BrandName,
 	)
 	return i, err
-}
-
-const getShopCompareBreakdown = `-- name: GetShopCompareBreakdown :many
-SELECT 
-    pn.name as product_name,
-    p.price_per_unit,
-    p.amount_or_weight,
-    SUM(p.price_per_unit * p.amount_or_weight) as total_price
-FROM shops s
-JOIN checks c ON s.id = c.shop_id
-JOIN products p ON c.id = p.check_id
-JOIN product_names pn ON p.product_id = pn.id
-WHERE s.id = $1 AND pn.name = ANY($2::text[])
-GROUP BY pn.name, p.price_per_unit, p.amount_or_weight
-ORDER BY pn.name
-`
-
-type GetShopCompareBreakdownParams struct {
-	ID      int32
-	Column2 []string
-}
-
-type GetShopCompareBreakdownRow struct {
-	ProductName    string
-	PricePerUnit   float64
-	AmountOrWeight float64
-	TotalPrice     int64
-}
-
-func (q *Queries) GetShopCompareBreakdown(ctx context.Context, arg GetShopCompareBreakdownParams) ([]GetShopCompareBreakdownRow, error) {
-	rows, err := q.db.Query(ctx, getShopCompareBreakdown, arg.ID, arg.Column2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetShopCompareBreakdownRow
-	for rows.Next() {
-		var i GetShopCompareBreakdownRow
-		if err := rows.Scan(
-			&i.ProductName,
-			&i.PricePerUnit,
-			&i.AmountOrWeight,
-			&i.TotalPrice,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getShopStats = `-- name: GetShopStats :one
