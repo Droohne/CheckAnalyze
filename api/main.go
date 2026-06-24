@@ -106,7 +106,8 @@ func main() {
 	mux.HandleFunc("POST /api/auth/register", h.PostRegister)
 	mux.HandleFunc("GET /api/feed", h.GetLiveFeed)
 	mux.HandleFunc("GET /api/products/{id}/history", h.GetProductPriceHistory)
-
+	mux.HandleFunc("GET /api/templates/{id}/products", h.GetTemplateWithProducts)
+	mux.HandleFunc("POST /api/shops/{id}/breakdown", h.GetShopBreakdown)
 	// Wrap entire mux with CORS
 	http.ListenAndServe(":8080", corsMiddleware(mux))
 }

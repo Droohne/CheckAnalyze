@@ -35,14 +35,15 @@ export const getUserStats = () => api.get('/user/stats');
 export const getStats = () => api.get('/stats');
 
 // Shops
-export const getShops = () => api.get('/stores');
+export const getShops = () => api.get('/shops');
 export const getNearbyShops = (lat: number, lng: number, radius?: number) =>
-  api.get('/stores/nearby', { params: { lat, lng, radius } });
+  api.get('/shops/nearby', { params: { lat, lng, radius } });
 export const searchShops = (query: string) =>
-  api.get('/stores/search', { params: { q: query } });
+  api.get('/shops/search', { params: { q: query } });
 export const compareShops = (products: string[]) =>
-  api.post('/stores/compare', { products });
-
+  api.post('/shops/compare', { products });
+export const getShopBreakdown = (shopId: number, products: string[]) =>
+  api.post(`/shops/${shopId}/breakdown`, { products });
 // Products
 export const getProducts = () => api.get('/products');
 export const getProduct = (id: number) => api.get(`/products/${id}`);

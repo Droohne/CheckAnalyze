@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { getDefaultTemplates, getUserTemplates, getShops, getNearbyShops, compareShops, getTemplateWithProducts } from '../api/client';
+import { getDefaultTemplates, getUserTemplates, getShops, getNearbyShops, compareShops, getTemplateWithProducts, getShopBreakdown } from '../api/client';
 
 function Shops() {
   const navigate = useNavigate();
@@ -9,10 +9,15 @@ function Shops() {
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [brandFilter, setBrandFilter] = useState('');
   const [addressSearch, setAddressSearch] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [compareResults, setCompareResults] = useState<any[]>([]);
+  const [selectedShop, setSelectedShop] = useState<any>(null);
+  const [shopBreakdown, setShopBreakdown] = useState<any[]>([]);
+  const [templateProducts, setTemplateProducts] = useState<string[]>([]);
 
   const { data: userTemplates = [] } = useQuery({
     queryKey: ['userTemplates'],
@@ -31,6 +36,14 @@ function Shops() {
     queryFn: () => getShops().then(r => r.data || []),
   });
 
+  const getProductsFromTemplate = async (template: any) => {
+    const templateData = await getTemplateWithProducts(template.id);
+    const products = (templateData.data || [])
+      .filter((r: any) => r.ProductName)
+      .map((r: any) => r.ProductName);
+    return products;
+  };
+
   const handleGeolocation = () => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -41,53 +54,75 @@ function Shops() {
     );
   };
 
+  const handleAddressChange = (value: string) => {
+    setAddressSearch(value);
+    if (value.length > 1) {
+      const filtered = shops
+        .filter((s: any) => s.Address?.toLowerCase().includes(value.toLowerCase()))
+        .slice(0, 5);
+      setAddressSuggestions(filtered);
+      setShowSuggestions(true);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
+  const selectAddress = (address: string, brand: string) => {
+    setAddressSearch(address);
+    setBrandFilter(brand);
+    setShowSuggestions(false);
+  };
+
   const handleCompare = async () => {
     if (!selectedTemplate) return;
-
-    // Get template products
-    const templateData = await getTemplateWithProducts(selectedTemplate.id);
-    const products = (templateData.data || [])
-      .filter((r: any) => r.product_name)
-      .map((r: any) => r.product_name);
-
-    if (products.length === 0) {
-      alert('Шаблон не содержит продуктов');
-      return;
-    }
-
+    const products = await getProductsFromTemplate(selectedTemplate);
+    if (products.length === 0) { alert('Шаблон не содержит продуктов'); return; }
+    setTemplateProducts(products);
     const result = await compareShops(products);
-    setCompareResults(result.data || []);
+    const results = (result.data || []).map((shop: any) => ({
+      ...shop,
+      hasAll: shop.ProductCount >= products.length,
+    }));
+    results.sort((a: any, b: any) => (b.hasAll ? 1 : 0) - (a.hasAll ? 1 : 0));
+    setCompareResults(results);
     setShowResults(true);
   };
 
   const handleNearbyCompare = async () => {
     if (!selectedTemplate || !userLat || !userLng) return;
-
     const nearby = await getNearbyShops(userLat, userLng);
     const nearbyData = nearby.data || [];
-
-    const templateData = await getTemplateWithProducts(selectedTemplate.id);
-    const products = (templateData.data || [])
-      .filter((r: any) => r.product_name)
-      .map((r: any) => r.product_name);
-
-    if (products.length === 0) {
-      alert('Шаблон не содержит продуктов');
-      return;
-    }
-
+    const products = await getProductsFromTemplate(selectedTemplate);
+    if (products.length === 0) { alert('Шаблон не содержит продуктов'); return; }
+    setTemplateProducts(products);
     const result = await compareShops(products);
-    const withDistance = (result.data || []).map((shop: any) => {
+    const results = (result.data || []).map((shop: any) => {
       const found = nearbyData.find((n: any) => n.ID === shop.ID);
-      return { ...shop, Distance: found?.Distance || null };
+      return { ...shop, Distance: found?.Distance || null, hasAll: shop.ProductCount >= products.length };
     });
-    setCompareResults(withDistance);
+    results.sort((a: any, b: any) => (b.hasAll ? 1 : 0) - (a.hasAll ? 1 : 0));
+    setCompareResults(results);
     setShowResults(true);
   };
 
-  const filteredShops = addressSearch
-    ? shops.filter((s: any) => s.Address?.toLowerCase().includes(addressSearch.toLowerCase()))
-    : shops;
+  const handleShopClick = async (shop: any) => {
+    setSelectedShop(shop);
+    const breakdown = await getShopBreakdown(shop.ID, templateProducts);
+    const data = breakdown.data || [];
+    
+    const fullBreakdown = templateProducts.map((productName: string) => {
+      const found = data.find((p: any) => p.MatchedTemplateName === productName);
+      return found || {
+        ProductName: productName,
+        PricePerUnit: null,
+        AmountOrWeight: null,
+        TotalPrice: null,
+        MatchedTemplateName: productName,
+      };
+    });
+    
+    setShopBreakdown(fullBreakdown);
+  };
 
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px' }}>
@@ -103,7 +138,6 @@ function Shops() {
         Сравните цены на продукты в разных магазинах
       </p>
 
-      {/* Template Selection */}
       <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
         <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px' }}>📋 Выберите шаблон для сравнения</div>
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -126,7 +160,6 @@ function Shops() {
         </div>
       </div>
 
-      {/* Mode Selection */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
         <button onClick={() => setMode('address')}
           style={{
@@ -142,10 +175,9 @@ function Shops() {
           }}>📍 Рядом со мной</button>
       </div>
 
-      {/* Search Area */}
       <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
         {mode === 'address' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '12px', alignItems: 'end' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', gap: '12px', alignItems: 'start' }}>
             <div>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Бренд</div>
               <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}
@@ -156,14 +188,37 @@ function Shops() {
                 ))}
               </select>
             </div>
-            <div>
+            <div style={{ position: 'relative' }}>
               <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Адрес</div>
               <input type="text" placeholder="Введите улицу или адрес..." value={addressSearch}
-                onChange={(e) => setAddressSearch(e.target.value)}
+                onChange={(e) => handleAddressChange(e.target.value)}
+                onFocus={() => addressSearch.length > 1 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '14px' }} />
+              {showSuggestions && addressSuggestions.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                  background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px',
+                  marginTop: '4px', maxHeight: '200px', overflow: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                }}>
+                  {addressSuggestions.map((s: any) => (
+                    <div key={s.ID} onClick={() => selectAddress(s.Address, s.BrandName)}
+                      style={{
+                        padding: '10px 14px', cursor: 'pointer', fontSize: '14px',
+                        borderBottom: '1px solid #f1f5f9',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#ffffff'}
+                    >
+                      <div style={{ fontWeight: '500' }}>{s.BrandName}</div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>{s.Address}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <button onClick={handleCompare} disabled={!selectedTemplate}
-              style={{ padding: '10px 24px', background: selectedTemplate ? '#0f172a' : '#94a3b8', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: selectedTemplate ? 'pointer' : 'not-allowed' }}>
+              style={{ padding: '10px 24px', background: selectedTemplate ? '#0f172a' : '#94a3b8', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: selectedTemplate ? 'pointer' : 'not-allowed', marginTop: '20px' }}>
               Сравнить
             </button>
           </div>
@@ -187,7 +242,6 @@ function Shops() {
         )}
       </div>
 
-      {/* Results */}
       {showResults && (
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '16px' }}>
@@ -198,19 +252,24 @@ function Shops() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
               {compareResults.map((shop: any, i: number) => (
-                <div key={shop.ID || i}
+                <div key={shop.ID || i} onClick={() => handleShopClick(shop)}
                   style={{
-                    background: i === 0 ? '#f0fdf4' : '#ffffff',
+                    background: shop.hasAll ? '#f0fdf4' : '#ffffff',
                     padding: '20px', borderRadius: '12px',
-                    border: i === 0 ? '2px solid #10b981' : '1px solid #e2e8f0',
+                    border: shop.hasAll ? '2px solid #10b981' : '1px solid #e2e8f0',
                     cursor: 'pointer', transition: 'box-shadow 0.2s', position: 'relative',
                   }}
                   onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'}
                   onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
                 >
-                  {i === 0 && (
-                    <div style={{ position: 'absolute', top: '-10px', right: '12px', background: '#10b981', color: '#fff', padding: '2px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '600' }}>
-                      🏆 Лучшая цена
+                  {!shop.hasAll && (
+                    <div style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '8px' }}>
+                      ⚠️ Найдено {shop.ProductCount} поз.
+                    </div>
+                  )}
+                  {shop.hasAll && (
+                    <div style={{ fontSize: '11px', color: '#10b981', marginBottom: '8px' }}>
+                      ✅ Все продукты в наличии
                     </div>
                   )}
                   <div style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a' }}>{shop.BrandName}</div>
@@ -228,6 +287,47 @@ function Shops() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {selectedShop && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}
+          onClick={() => setSelectedShop(null)}>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', maxWidth: '550px', width: '100%', maxHeight: '70vh', overflow: 'auto' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <h3 style={{ margin: 0 }}>{selectedShop.BrandName}</h3>
+              <button onClick={() => setSelectedShop(null)} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>{selectedShop.Address}</div>
+            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
+                  <th style={{ padding: '6px' }}>Продукт</th>
+                  <th style={{ padding: '6px' }}>Цена</th>
+                  <th style={{ padding: '6px' }}>Кол-во</th>
+                  <th style={{ padding: '6px' }}>Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shopBreakdown.map((p: any, i: number) => (
+                  <tr key={i} style={{ 
+                    borderBottom: '1px solid #f1f5f9', 
+                    opacity: p.PricePerUnit ? 1 : 0.4,
+                    background: p.PricePerUnit ? 'transparent' : '#fef2f2',
+                  }}>
+                    <td style={{ padding: '6px' }}>
+                      {p.ProductName}
+                      {!p.PricePerUnit && <span style={{ fontSize: '10px', color: '#ef4444', marginLeft: '4px' }}>Нет данных из магазина</span>}
+                    </td>
+                    <td style={{ padding: '6px' }}>{p.PricePerUnit ? `${p.PricePerUnit.toFixed(2)} ₽` : '—'}</td>
+                    <td style={{ padding: '6px' }}>{p.AmountOrWeight ?? '—'}</td>
+                    <td style={{ padding: '6px', fontWeight: '600' }}>{p.TotalPrice ? `${p.TotalPrice.toFixed(2)} ₽` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
