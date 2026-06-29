@@ -1,0 +1,281 @@
+.home-container {
+  height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px 40px;
+}
+
+.home-upload-section {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.loading-state {
+  padding: 40px;
+  text-align: center;
+}
+
+.upload-zone {
+  background: #ffffff;
+  padding: 28px 40px;
+  border-radius: 16px;
+  border: 2px dashed #e2e8f0;
+  text-align: center;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.upload-zone-drag {
+  background: #f0f9ff;
+  border-color: #3b82f6;
+}
+
+.upload-zone-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.upload-zone-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.upload-zone-subtitle {
+  color: #64748b;
+  margin: 0 0 16px 0;
+  font-size: 14px;
+}
+
+.file-list {
+  margin-bottom: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.file-item-pending {
+  background: #f8fafc;
+}
+
+.file-item-uploading {
+  background: #f0f9ff;
+}
+
+.file-item-success {
+  background: #f0fdf4;
+}
+
+.file-item-error {
+  background: #fef2f2;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-icon {
+  flex-shrink: 0;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.file-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+.file-remove:hover {
+  color: #ef4444;
+}
+
+.upload-error {
+  color: #ef4444;
+  font-size: 13px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: #fee2e2;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.upload-progress {
+  margin-bottom: 12px;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.upload-file-input-wrapper {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+}
+
+.upload-file-input {
+  width: 100%;
+  font-size: 14px;
+}
+
+.upload-file-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-clear {
+  padding: 10px 24px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-clear:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.btn-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-upload {
+  padding: 10px 40px;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-upload:hover:not(:disabled) {
+  background: #1e293b;
+}
+
+.btn-upload:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.ticker-container {
+  margin-top: 16px;
+  padding: 10px 0;
+  border-top: 1px solid #e2e8f0;
+  overflow: hidden;
+  background: #f8fafc;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+.ticker-wrapper {
+  display: flex;
+  animation: scroll 30s linear infinite;
+  gap: 20px;
+  white-space: nowrap;
+}
+
+.ticker-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  max-width: 200px;
+  min-width: 120px;
+}
+
+.ticker-product {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+}
+
+.ticker-product-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.ticker-store-name {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.ticker-price {
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+  flex-shrink: 0;
+}
+
+.ticker-empty {
+  padding: 10px;
+  color: #64748b;
+}
+
+@keyframes scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}

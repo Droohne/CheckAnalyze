@@ -1,14 +1,19 @@
 import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import Home from './pages/Home';
-import Shops from './pages/Shops';
-import Catalog from './pages/Catalog';
-import Templates from './pages/Templates';
-import Settings from './pages/Settings';
-import Login from './pages/Login';
-import Profile from './pages/Profile';
+import Home from './pages/Home/Home';
+import Shops from './pages/Shops/Shops';
+import Catalog from './pages/Catalog/Catalog';
+import Templates from './pages/Templates/Templates';
+import Settings from './pages/Settings/Settings';
+import Login from './pages/Login/Login';
+import Profile from './pages/Profile/Profile';
 import { useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+
+// Import global styles
+import './styles/variables.css';
+import './styles/common.css';
+import './styles/components.css';
 
 function Navigation() {
   const location = useLocation();
@@ -30,33 +35,14 @@ function Navigation() {
   ];
 
   return (
-    <div style={{ 
-      background: '#ffffff', 
-      borderBottom: '1px solid #e2e8f0', 
-      padding: '0 40px', 
-      height: '64px', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'space-between',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ fontSize: '20px', fontWeight: '700', color: '#0f172a' }}>⚡ Aggregator</span>
-      </div>
-      <div style={{ display: 'flex', gap: '28px', fontSize: '14px', color: '#475569' }}>
+    <div className="nav-container">
+      <span className="nav-logo">⚡ Aggregator</span>
+      <div className="nav-links">
         {links.map(link => (
           <Link
             key={link.path}
             to={link.path}
-            style={{
-              textDecoration: 'none',
-              color: location.pathname === link.path ? '#0f172a' : '#475569',
-              fontWeight: location.pathname === link.path ? '500' : '400',
-              borderBottom: location.pathname === link.path ? '2px solid #0f172a' : 'none',
-              paddingBottom: '20px',
-            }}
+            className={`nav-link ${location.pathname === link.path ? 'nav-link-active' : ''}`}
           >
             {link.label}
           </Link>
@@ -67,58 +53,18 @@ function Navigation() {
           <>
             <div 
               onClick={() => setShowProfileMenu(!showProfileMenu)}
-              style={{ 
-                width: '40px', 
-                height: '40px', 
-                borderRadius: '50%', 
-                background: '#6366f1', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                fontSize: '16px', 
-                fontWeight: '600',
-                color: '#fff',
-                cursor: 'pointer',
-              }}
+              className="nav-avatar"
             >
               {user.name ? user.name[0].toUpperCase() : 'U'}
             </div>
             {showProfileMenu && (
-              <div style={{
-                position: 'absolute',
-                top: '48px',
-                right: 0,
-                background: '#ffffff',
-                borderRadius: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                border: '1px solid #e2e8f0',
-                minWidth: '180px',
-                overflow: 'hidden',
-                zIndex: 200,
-              }}>
-                <Link to="/profile" style={{
-                  display: 'block',
-                  padding: '10px 16px',
-                  color: '#0f172a',
-                  textDecoration: 'none',
-                  fontSize: '14px',
-                  borderBottom: '1px solid #f1f5f9',
-                }}>
+              <div className="dropdown-menu">
+                <Link to="/profile" className="dropdown-item">
                   👤 Profile
                 </Link>
                 <button
                   onClick={() => { handleLogout(); setShowProfileMenu(false); }}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    padding: '10px 16px',
-                    border: 'none',
-                    background: 'transparent',
-                    textAlign: 'left',
-                    fontSize: '14px',
-                    color: '#ef4444',
-                    cursor: 'pointer',
-                  }}
+                  className="dropdown-item dropdown-item-danger"
                 >
                   🚪 Logout
                 </button>
@@ -126,15 +72,7 @@ function Navigation() {
             )}
           </>
         ) : (
-          <Link to="/login" style={{
-            padding: '8px 20px',
-            background: '#0f172a',
-            color: '#fff',
-            textDecoration: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '500',
-          }}>
+          <Link to="/login" className="btn btn-primary" style={{ textDecoration: 'none' }}>
             Login
           </Link>
         )}
@@ -146,7 +84,7 @@ function Navigation() {
 function App() {
   return (
     <BrowserRouter>
-      <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif', color: '#0f172a' }}>
+      <div style={{ minHeight: '100vh' }}>
         <Navigation />
         <Routes>
           <Route path="/" element={
