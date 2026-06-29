@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProducts, getProduct, getIdenticalProducts, addIdenticalProduct, getProductPriceHistory } from '../api/client';
+import { getProducts, getIdenticalProducts, addIdenticalProduct, getProductPriceHistory } from '../api/client';
 
 interface Product {
   ID: number;
@@ -12,17 +12,6 @@ interface Product {
   CheckID: string;
   CreatedAt: string;
   CategoryName?: string;
-}
-
-interface PriceHistory {
-  ID: number;
-  PricePerUnit: number;
-  AmountOrWeight: number;
-  ProductName: string;
-  CheckID: string;
-  CreatedAt: string;
-  BrandName?: string;
-  ShopAddress?: string;
 }
 
 function Catalog() {

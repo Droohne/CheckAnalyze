@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect} from 'react';
 import { login as apiLogin, getProfile } from '../api/client';
+import type { ReactNode } from 'react';
 
 interface User {
   id: number;
