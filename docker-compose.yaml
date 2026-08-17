@@ -1,7 +1,6 @@
-version: '3.8'
-
 services:
   api:
+    container_name: "api"
     build: ./api
     ports:
       - "8080:8080"
@@ -17,6 +16,7 @@ services:
         condition: service_healthy
 
   client:
+    container_name: "client"
     build: ./client
     ports:
       - "8081:80"
@@ -25,6 +25,7 @@ services:
       - api
 
   postgres:
+    container_name: "postgres"
     image: postgres:18
     environment:
       - POSTGRES_USER=postgres
