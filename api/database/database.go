@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"CheckAnalyze/config"
@@ -37,6 +38,7 @@ func (d *Database) EnsureDatabaseExists() error {
 	ctx := context.Background()
 	adminConn, err := pgxpool.New(ctx, connStr)
 	if err != nil {
+		slog.Error("failed to connect to admin DB", "host", adminConfig.Host, "port", adminConfig.Port, "error", err)
 		return fmt.Errorf("failed to connect to admin DB: %w", err)
 	}
 	defer adminConn.Close()
@@ -47,6 +49,7 @@ func (d *Database) EnsureDatabaseExists() error {
 		targetDB,
 	).Scan(&exists)
 	if err != nil {
+		slog.Error("failed to check database existence", "db_name", targetDB, "error", err)
 		return fmt.Errorf("failed to check database existence: %w", err)
 	}
 
@@ -56,6 +59,7 @@ func (d *Database) EnsureDatabaseExists() error {
 			WHERE datname ILIKE $1 AND datname != 'postgres'
 		`, targetDB)
 		if err != nil {
+			slog.Error("failed to query similar databases", "db_name", targetDB, "error", err)
 			return fmt.Errorf("failed to query similar databases: %w", err)
 		}
 
@@ -64,6 +68,7 @@ func (d *Database) EnsureDatabaseExists() error {
 			var name string
 			if err := rows.Scan(&name); err != nil {
 				rows.Close()
+				slog.Error("failed to scan database name", "error", err)
 				return fmt.Errorf("failed to scan database name: %w", err)
 			}
 			dbNames = append(dbNames, name)
@@ -71,18 +76,20 @@ func (d *Database) EnsureDatabaseExists() error {
 		rows.Close()
 
 		for _, name := range dbNames {
-			fmt.Printf("🗑️  Removing: %s\n", name)
+			slog.Warn("removing similarly-named database", "db_name", name)
 			if _, err := adminConn.Exec(ctx, fmt.Sprintf(`DROP DATABASE IF EXISTS "%s"`, name)); err != nil {
+				slog.Error("failed to drop database", "db_name", name, "error", err)
 				return fmt.Errorf("failed to drop database %s: %w", name, err)
 			}
 		}
 
 		if _, err := adminConn.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, targetDB)); err != nil {
+			slog.Error("failed to create database", "db_name", targetDB, "error", err)
 			return fmt.Errorf("failed to create database %s: %w", targetDB, err)
 		}
-		fmt.Printf("✅ Database '%s' created\n", targetDB)
+		slog.Info("database created", "db_name", targetDB)
 	} else {
-		fmt.Printf("✅ Database '%s' exists\n", targetDB)
+		slog.Info("database exists", "db_name", targetDB)
 	}
 
 	time.Sleep(1 * time.Second)
@@ -105,11 +112,11 @@ func (d *Database) Connect() error {
 	ctx := context.Background()
 	var err error
 	for attempt := 1; attempt <= 5; attempt++ {
-		fmt.Printf("🔄 Connecting attempt %d/5...\n", attempt)
+		slog.Info("connecting to database", "attempt", attempt, "max_attempts", 5, "host", cfg.Host, "port", cfg.Port, "db_name", cfg.DBName)
 
 		poolConfig, err := pgxpool.ParseConfig(connStr)
 		if err != nil {
-			fmt.Printf("⏳ Error parsing config on attempt %d: %v\n", attempt, err)
+			slog.Warn("failed to parse pool config, retrying", "attempt", attempt, "error", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -123,48 +130,52 @@ func (d *Database) Connect() error {
 				}
 				// Initialize sqlc queries
 				d.Queries = sqlc.New(d.pool)
-				fmt.Println("✅ Connected!")
+				slog.Info("database connected", "attempt", attempt)
 				return nil
 			}
 		}
-		fmt.Printf("⏳ Error on attempt %d: %v\n", attempt, err)
+		slog.Warn("database connection attempt failed, retrying", "attempt", attempt, "error", err)
 		if d.pool != nil {
 			d.pool.Close()
 		}
 		time.Sleep(2 * time.Second)
 	}
 
+	slog.Error("failed to connect to database after all attempts", "attempts", 5, "error", err)
 	return fmt.Errorf("failed to connect after 5 attempts: %w", err)
 }
 
 func (d *Database) runMigrations() error {
-    cfg := config.GetDBConfig()
-    connStr := fmt.Sprintf(
-        "postgres://%s:%s@%s:%s/%s?sslmode=disable",
-        cfg.User, cfg.Password,
-        cfg.Host, cfg.Port,
-        cfg.DBName,
-    )
+	cfg := config.GetDBConfig()
+	connStr := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		cfg.User, cfg.Password,
+		cfg.Host, cfg.Port,
+		cfg.DBName,
+	)
 
-    m, err := migrate.New(
-        "file://database/migrations",  // ← fixed
-        connStr,
-    )
-    if err != nil {
-        return fmt.Errorf("failed to create migrator: %w", err)
-    }
+	m, err := migrate.New(
+		"file://database/migrations", // ← fixed
+		connStr,
+	)
+	if err != nil {
+		slog.Error("failed to create migrator", "error", err)
+		return fmt.Errorf("failed to create migrator: %w", err)
+	}
 
-    if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-        return fmt.Errorf("migration failed: %w", err)
-    }
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		slog.Error("migration failed", "error", err)
+		return fmt.Errorf("migration failed: %w", err)
+	}
 
-    fmt.Println("✅ Migrations applied")
-    return nil
+	slog.Info("migrations applied")
+	return nil
 }
 
 func (d *Database) Close() error {
 	if d.pool != nil {
 		d.pool.Close()
+		slog.Info("database connection pool closed")
 	}
 	return nil
 }

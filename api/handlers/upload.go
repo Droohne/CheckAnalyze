@@ -5,8 +5,8 @@ import (
 	"CheckAnalyze/database/sqlc"
 	"CheckAnalyze/parser"
 	"encoding/json"
-	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,13 +20,17 @@ import (
 func writeJSONError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"message": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"message": message}); err != nil {
+		slog.Error("failed to encode error response", "error", err)
+	}
 }
 
 func writeJSONSuccess(w http.ResponseWriter, data map[string]string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		slog.Error("failed to encode success response", "error", err)
+	}
 }
 
 func NormalizeAddress(addr string) string {
@@ -58,35 +62,37 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 
 	userID, ok := ctx.Value("user_id").(int32)
 	if !ok {
-		fmt.Printf("ERROR: Unauthorized - no user_id in context\n")
+		slog.Error("upload check: unauthorized, no user_id in context")
 		writeJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	log := slog.With("user_id", userID)
+
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		fmt.Printf("ERROR: File too large: %v\n", err)
+		log.Warn("upload check: file too large", "error", err)
 		writeJSONError(w, "File too large", http.StatusBadRequest)
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		fmt.Printf("ERROR: file required: %v\n", err)
+		log.Warn("upload check: file required", "error", err)
 		writeJSONError(w, "file required", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
 	if ext := filepath.Ext(header.Filename); ext != ".json" {
-		fmt.Printf("ERROR: Only JSON files allowed, got: %s\n", ext)
+		log.Warn("upload check: invalid file extension", "extension", ext)
 		writeJSONError(w, "Only JSON files allowed", http.StatusBadRequest)
 		return
 	}
 
 	tempFile, err := os.CreateTemp("", "check_*.json")
 	if err != nil {
-		fmt.Printf("ERROR: Failed to create temp file: %v\n", err)
+		log.Error("upload check: failed to create temp file", "error", err)
 		writeJSONError(w, "Failed to create temp file", http.StatusInternalServerError)
 		return
 	}
@@ -94,75 +100,80 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 	defer tempFile.Close()
 
 	if _, err := io.Copy(tempFile, file); err != nil {
-		fmt.Printf("ERROR: Failed to save file: %v\n", err)
+		log.Error("upload check: failed to save file", "error", err)
 		writeJSONError(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
 
 	parsedCheck, err := parser.ParseCheckJSON(tempFile.Name())
 	if err != nil {
-		fmt.Printf("ERROR: Failed to parse check: %v\n", err)
+		log.Warn("upload check: failed to parse check", "error", err)
 		writeJSONError(w, "Failed to parse check: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	fmt.Printf("Parsed check: ID=%s, Shop=%s, Address=%s, Items=%d\n",
-		parsedCheck.CheckID, parsedCheck.ShopFullname, parsedCheck.Address, len(parsedCheck.Items))
+	log = log.With("check_id", parsedCheck.CheckID)
+	log.Info("check parsed",
+		"shop", parsedCheck.ShopFullname,
+		"address", parsedCheck.Address,
+		"items", len(parsedCheck.Items),
+	)
 
 	// Check if check already exists
 	_, err = h.DB.GetCheckByCheckID(ctx, parsedCheck.CheckID)
 	if err == nil {
-		fmt.Printf("ERROR: Check already exists: %s\n", parsedCheck.CheckID)
+		log.Warn("upload check: check already exists")
 		writeJSONError(w, "Check already exists: "+parsedCheck.CheckID, http.StatusConflict)
 		return
 	}
-	fmt.Printf("Check %s not found in DB, proceeding...\n", parsedCheck.CheckID)
+	log.Debug("check not found in DB, proceeding")
 
 	// Step 1: Find or create brand
 	brand, err := h.DB.GetBrandByName(ctx, parsedCheck.ShopFullname)
 	if err != nil {
-		fmt.Printf("Brand '%s' not found, creating... (error: %v)\n", parsedCheck.ShopFullname, err)
+		log.Info("brand not found, creating", "brand_name", parsedCheck.ShopFullname, "lookup_error", err)
 		brand, err = h.DB.CreateBrand(ctx, parsedCheck.ShopFullname)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to create brand '%s': %v\n", parsedCheck.ShopFullname, err)
+			log.Error("failed to create brand", "brand_name", parsedCheck.ShopFullname, "error", err)
 			writeJSONError(w, "Failed to create brand", http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("Brand created: ID=%d, Name=%s\n", brand.ID, brand.Name)
+		log.Info("brand created", "brand_id", brand.ID, "brand_name", brand.Name)
 	} else {
-		fmt.Printf("Brand found: ID=%d, Name=%s\n", brand.ID, brand.Name)
+		log.Debug("brand found", "brand_id", brand.ID, "brand_name", brand.Name)
 	}
 
 	// Step 2: Find or create shop with brand link
 	parsedCheck.Address = NormalizeAddress(parsedCheck.Address)
 	shop, err := h.DB.GetShopByAddress(ctx, parsedCheck.Address)
 	if err != nil {
-		fmt.Printf("Shop at address '%s' not found, creating with brand_id=%d... (error: %v)\n",
-			parsedCheck.Address, brand.ID, err)
+		log.Info("shop not found, creating", "address", parsedCheck.Address, "brand_id", brand.ID, "lookup_error", err)
 		shop, err = h.DB.CreateShop(ctx, sqlc.CreateShopParams{
 			BrandID: brand.ID,
 			Address: parsedCheck.Address,
 		})
 		if err != nil {
-			fmt.Printf("ERROR: Failed to create shop: %v\n", err)
-			fmt.Printf("  BrandID: %d\n", brand.ID)
-			fmt.Printf("  Address: %s\n", parsedCheck.Address)
+			log.Error("failed to create shop", "brand_id", brand.ID, "address", parsedCheck.Address, "error", err)
 			writeJSONError(w, "Failed to create shop", http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("Shop created: ID=%d, BrandID=%d, Address=%s\n", shop.ID, shop.BrandID, shop.Address)
+		log.Info("shop created", "shop_id", shop.ID, "brand_id", shop.BrandID, "address", shop.Address)
 	} else {
-		fmt.Printf("Shop found: ID=%d, BrandID=%d, Address=%s\n", shop.ID, shop.BrandID, shop.Address)
+		log.Debug("shop found", "shop_id", shop.ID, "brand_id", shop.BrandID, "address", shop.Address)
 		if shop.BrandID != brand.ID {
-			fmt.Printf("WARNING: Shop brand mismatch! Shop has brand_id=%d, check has brand_id=%d (%s)\n",
-				shop.BrandID, brand.ID, parsedCheck.ShopFullname)
+			log.Warn("shop brand mismatch",
+				"shop_id", shop.ID,
+				"shop_brand_id", shop.BrandID,
+				"check_brand_id", brand.ID,
+				"check_brand_name", parsedCheck.ShopFullname,
+			)
 		}
 	}
 
 	// Step 3: Create the check
 	parsedTime, err := time.Parse("2006-01-02T15:04:05", parsedCheck.DateTime)
 	if err != nil {
-		fmt.Printf("WARNING: Failed to parse date '%s': %v, using current time\n", parsedCheck.DateTime, err)
+		log.Warn("failed to parse check date, using current time", "date", parsedCheck.DateTime, "error", err)
 		parsedTime = time.Now()
 	}
 
@@ -174,11 +185,11 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: pgtype.Timestamp{Time: parsedTime, Valid: true},
 	})
 	if err != nil {
-		fmt.Printf("ERROR: Failed to create check: %v\n", err)
+		log.Error("failed to create check", "error", err)
 		writeJSONError(w, "Failed to create check", http.StatusInternalServerError)
 		return
 	}
-	fmt.Printf("Check created: ID=%d, CheckID=%s, Date=%s\n", dbCheck.ID, dbCheck.CheckID, parsedTime.Format("2006-01-02"))
+	log.Info("check created", "db_check_id", dbCheck.ID, "date", parsedTime.Format("2006-01-02"))
 
 	// Step 4: Process items
 	for _, item := range parsedCheck.Items {
@@ -196,7 +207,7 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			category, err = h.DB.CreateCategory(ctx, categoryName)
 			if err != nil {
-				fmt.Printf("ERROR: Failed to create category '%s': %v\n", categoryName, err)
+				log.Error("failed to create category", "category_name", categoryName, "product_name", normalizedName, "error", err)
 				writeJSONError(w, "Failed to create category", http.StatusInternalServerError)
 				return
 			}
@@ -204,7 +215,7 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 
 		product, err := h.DB.GetOrCreateProductName(ctx, normalizedName)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to get/create product '%s': %v\n", normalizedName, err)
+			log.Error("failed to get/create product", "product_name", normalizedName, "error", err)
 			writeJSONError(w, "Failed to get/create product", http.StatusInternalServerError)
 			return
 		}
@@ -217,13 +228,13 @@ func (h *Handlers) PostUploadCheck(w http.ResponseWriter, r *http.Request) {
 			AmountOrWeight: quantity,
 		})
 		if err != nil {
-			fmt.Printf("ERROR: Failed to save product '%s': %v\n", normalizedName, err)
+			log.Error("failed to save product", "product_name", normalizedName, "error", err)
 			writeJSONError(w, "Failed to save product", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	fmt.Printf("SUCCESS: Check %s uploaded with %d items\n", parsedCheck.CheckID, len(parsedCheck.Items))
+	log.Info("check uploaded successfully", "items", len(parsedCheck.Items))
 	writeJSONSuccess(w, map[string]string{
 		"message":  "Check uploaded successfully",
 		"check_id": parsedCheck.CheckID,

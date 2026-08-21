@@ -6,11 +6,66 @@ import (
 	"CheckAnalyze/database/seed"
 	"CheckAnalyze/handlers"
 	"context"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var logger *slog.Logger
+
+func initLogger() *slog.Logger {
+	level := slog.LevelInfo
+	if os.Getenv("LOG_LEVEL") == "debug" {
+		level = slog.LevelDebug
+	}
+
+	var handler slog.Handler
+	if os.Getenv("LOG_FORMAT") == "text" {
+		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	}
+
+	l := slog.New(handler)
+	slog.SetDefault(l)
+	return l
+}
+
+// responseWriter wraps http.ResponseWriter to capture the status code for logging.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := newResponseWriter(w)
+
+		next.ServeHTTP(rw, r)
+
+		logger.Info("request handled",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.statusCode,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"remote_addr", r.RemoteAddr,
+		)
+	})
+}
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +91,7 @@ func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenString := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if tokenString == "" {
+			logger.Warn("auth failed: missing token", "path", r.URL.Path, "remote_addr", r.RemoteAddr)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -44,18 +100,21 @@ func authMiddleware(next http.Handler) http.Handler {
 			return config.JWTSecret, nil
 		})
 		if err != nil || !token.Valid {
+			logger.Warn("auth failed: invalid token", "path", r.URL.Path, "remote_addr", r.RemoteAddr, "error", err)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			logger.Warn("auth failed: invalid claims", "path", r.URL.Path)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		userIDFloat, ok := claims["user_id"].(float64)
 		if !ok {
+			logger.Warn("auth failed: missing user_id claim", "path", r.URL.Path)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -66,14 +125,22 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	logger = initLogger()
+
 	db := database.New()
 	if err := db.Connect(); err != nil {
-		panic(err)
+		logger.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
+	logger.Info("database connected")
 
 	ctx := context.Background()
-	seed.SeedUsers(ctx, db)
+	if err := seed.SeedUsers(ctx, db); err != nil {
+		logger.Error("failed to seed users", "error", err)
+	} else {
+		logger.Info("users seeded")
+	}
 
 	h := handlers.New(db)
 
@@ -112,6 +179,14 @@ func main() {
 	mux.HandleFunc("GET /api/feed", h.GetLiveFeed)
 	mux.HandleFunc("GET /api/products/{id}/history", h.GetProductPriceHistory)
 	mux.HandleFunc("GET /api/templates/{id}/products", h.GetTemplateWithProducts)
-	// Wrap entire mux with CORS
-	http.ListenAndServe(":8080", corsMiddleware(mux))
+
+	// Wrap entire mux with logging + CORS
+	handler := loggingMiddleware(corsMiddleware(mux))
+
+	addr := ":8080"
+	logger.Info("starting server", "addr", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		logger.Error("server stopped", "error", err)
+		os.Exit(1)
+	}
 }

@@ -3,24 +3,26 @@ package seed
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"CheckAnalyze/database"
 	"CheckAnalyze/database/sqlc"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
-func SeedUsers(ctx context.Context, db *database.Database) {
+func SeedUsers(ctx context.Context, db *database.Database) error {
 	// Check if user exists
 	_, err := db.GetUserByEmail(ctx, "admin@gmail.com")
 	if err == nil {
-		return // User already exists
+		slog.Info("admin user already exists, skipping seed")
+		return nil
 	}
 
 	// Generate hash at runtime
 	hash, err := bcrypt.GenerateFromPassword([]byte("23Hf)0!J&9Wqk"), bcrypt.DefaultCost)
 	if err != nil {
-		fmt.Printf("Failed to hash password: %v\n", err)
-		return
+		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	_, err = db.CreateUser(ctx, sqlc.CreateUserParams{
@@ -29,8 +31,9 @@ func SeedUsers(ctx context.Context, db *database.Database) {
 		Name:         "Admin",
 	})
 	if err != nil {
-		fmt.Printf("Failed to seed admin: %v\n", err)
-	} else {
-		fmt.Println("✅ Admin user created: admin@gmail.com / 23Hf)0!J&9Wqk")
+		return fmt.Errorf("failed to seed admin: %w", err)
 	}
+
+	slog.Info("admin user created", "email", "admin@gmail.com")
+	return nil
 }
